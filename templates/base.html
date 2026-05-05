@@ -61,12 +61,12 @@
                     {% elif current_user.role == 'seller' %}
                         <a href="{{ url_for('seller.dashboard') }}" class="btn btn-sm btn-secondary"><i class="bi bi-box"></i> Toko Saya</a>
                     {% else %}
-                        <a href="{{ url_for('main.chatbot_page') }}" class="btn btn-sm btn-secondary" title="Chatbot"><i class="bi bi-robot"></i></a>
+
                     {% endif %}
                     <a href="{{ url_for('main.profil') }}" class="btn btn-sm btn-secondary"><i class="bi bi-person"></i> {{ current_user.username }}</a>
                     <a href="{{ url_for('auth.logout') }}" class="btn btn-sm btn-danger"><i class="bi bi-box-arrow-right"></i></a>
                 {% else %}
-                    <a href="{{ url_for('main.chatbot_page') }}" class="btn btn-sm btn-secondary" title="Chatbot"><i class="bi bi-robot"></i></a>
+
                     <a href="{{ url_for('auth.login') }}" class="btn btn-sm btn-secondary">Masuk</a>
                     <a href="{{ url_for('auth.register') }}" class="btn btn-sm btn-primary">Daftar</a>
                 {% endif %}
@@ -106,7 +106,7 @@
             </div>
             <div class="footer-links">
                 <a href="{{ url_for('main.tentang') }}"><i class="bi bi-info-circle"></i> Tentang Sistem</a>
-                <a href="{{ url_for('main.chatbot_page') }}"><i class="bi bi-robot"></i> Chatbot AI</a>
+
                 <a href="{{ url_for('main.list_produk') }}"><i class="bi bi-grid"></i> Semua Produk</a>
             </div>
             <p>&copy; 2026 Sistem Rekomendasi Produk UMKM Kota Kendari</p>
@@ -150,5 +150,6 @@
         });
     })();
     </script>
+    {% include "partials/chatbot_widget.html" %}
 </body>
 </html>

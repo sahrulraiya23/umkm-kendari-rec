@@ -1,0 +1,317 @@
+<!-- Chatbot Widget -->
+<div class="chatbot-widget-container">
+    <!-- Chat Window -->
+    <div class="chatbot-window hidden" id="chatbotWindow">
+        <!-- Header -->
+        <div class="cw-header">
+            <div class="cw-header-info">
+                <div class="cw-avatar">🤖</div>
+                <div>
+                    <h3 style="margin: 0; font-size: 1rem; font-weight: 700;">Asisten UMKM</h3>
+                    <span class="cw-online-badge"><span class="cw-online-dot"></span> Online</span>
+                </div>
+            </div>
+            <button class="cw-close-btn" id="cwCloseBtn" title="Tutup Chat"><i class="bi bi-x-lg"></i></button>
+        </div>
+
+        <!-- Body -->
+        <div class="cw-body" id="cwBody">
+            <div class="cw-bubble bot">
+                <div class="cw-bubble-avatar">🤖</div>
+                <div class="cw-bubble-content">
+                    Halo! 👋 Saya asisten cerdas UMKM Kendari.<br><br>
+                    Coba tanyakan:<br>
+                    • <strong>Toko hari ini buka?</strong><br>
+                    • <strong>Stok produk ada?</strong> (Contoh: "Stok sinonggi ada?")
+                </div>
+            </div>
+        </div>
+
+        <!-- Input -->
+        <div class="cw-input-bar">
+            <div class="cw-suggestions">
+                <button class="cw-suggestion-chip" onclick="cwSendSuggestion('Toko hari ini buka?')">🕒 Buka Hari Ini</button>
+                <button class="cw-suggestion-chip" onclick="cwSendSuggestion('Stok sinonggi ada?')">📦 Cek Stok</button>
+            </div>
+            <form id="cwForm" class="cw-form">
+                <input type="text" id="cwInput" placeholder="Ketik pesan..." autocomplete="off">
+                <button type="submit" class="btn btn-primary cw-send-btn"><i class="bi bi-send-fill"></i></button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Floating Button -->
+    <button class="chatbot-fab" id="chatbotFab" title="Buka Chat Asisten">
+        <i class="bi bi-robot"></i>
+    </button>
+</div>
+
+<style>
+.chatbot-widget-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 9999;
+}
+.chatbot-fab {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: white;
+    border: none;
+    box-shadow: 0 4px 12px rgba(37,99,235,0.35);
+    font-size: 1.8rem;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.chatbot-fab:hover {
+    transform: scale(1.08) translateY(-4px);
+    box-shadow: 0 8px 20px rgba(37,99,235,0.45);
+}
+.chatbot-window {
+    position: absolute;
+    bottom: 76px;
+    right: 0;
+    width: 360px;
+    height: 520px;
+    background: var(--bg-card);
+    border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transform-origin: bottom right;
+    transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.2);
+    border: 1px solid var(--border-color);
+}
+.chatbot-window.hidden {
+    opacity: 0;
+    transform: scale(0.85);
+    pointer-events: none;
+}
+.chatbot-window.visible {
+    opacity: 1;
+    transform: scale(1);
+    pointer-events: all;
+}
+@media (max-width: 480px) {
+    .chatbot-window {
+        position: fixed;
+        bottom: 0; right: 0; left: 0; top: 0;
+        width: 100%; height: 100%; border-radius: 0;
+        z-index: 10000;
+    }
+    .chatbot-widget-container { bottom: 16px; right: 16px; }
+}
+
+/* Header */
+.cw-header {
+    background: linear-gradient(135deg, var(--primary-dark), var(--secondary));
+    color: white; padding: 1rem; display: flex; align-items: center; justify-content: space-between;
+}
+.cw-header-info { display: flex; align-items: center; gap: 0.8rem; }
+.cw-avatar {
+    width: 40px; height: 40px; border-radius: 50%; font-size: 1.3rem;
+    background: rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(4px);
+}
+.cw-online-badge { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; opacity: 0.9; }
+.cw-online-dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; animation: cwPulse 2s infinite; }
+@keyframes cwPulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+.cw-close-btn {
+    background: rgba(255,255,255,0.2); border: none; color: white; border-radius: 50%;
+    width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: 0.2s;
+}
+.cw-close-btn:hover { background: rgba(255,255,255,0.3); transform: rotate(90deg); }
+
+/* Body */
+.cw-body {
+    flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.8rem;
+    background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%); scroll-behavior: smooth;
+}
+.cw-body::-webkit-scrollbar { width: 6px; }
+.cw-body::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+
+/* Bubbles */
+.cw-bubble { display: flex; gap: 0.5rem; max-width: 90%; animation: cwFadeInUp 0.25s ease; }
+@keyframes cwFadeInUp { from{opacity:0;transform:translateY(10px);} to{opacity:1;transform:translateY(0);} }
+.cw-bubble.bot { align-self: flex-start; }
+.cw-bubble.user { align-self: flex-end; flex-direction: row-reverse; }
+.cw-bubble-avatar {
+    width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.9rem; background: white; border: 1px solid var(--border-color); box-shadow: var(--shadow-xs);
+}
+.cw-bubble.user .cw-bubble-avatar { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); border: none; }
+.cw-bubble-content {
+    background: white; border: 1px solid var(--border-color); border-radius: 14px 14px 14px 4px;
+    padding: 0.6rem 0.85rem; font-size: 0.85rem; line-height: 1.5; color: var(--text-primary); box-shadow: var(--shadow-xs);
+    word-break: break-word;
+}
+.cw-bubble.user .cw-bubble-content {
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: white; border: none;
+    border-radius: 14px 14px 4px 14px; box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+}
+
+/* Chat Product Grid (Small scale) */
+.cw-product-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.4rem; margin-top: 0.4rem; width: 250px; }
+.cw-product-card {
+    background: white; border-radius: 8px; border: 1px solid var(--border-color); overflow: hidden;
+    text-decoration: none; color: inherit; display: flex; flex-direction: column; box-shadow: var(--shadow-xs);
+    transition: 0.2s;
+}
+.cw-product-card:hover { border-color: var(--primary); transform: translateY(-2px); }
+.cw-product-card .cw-img-wrapper { width: 100%; height: 70px; background: var(--bg-surface); position: relative; }
+.cw-product-card img { width: 100%; height: 100%; object-fit: cover; }
+.cw-card-body { padding: 0.4rem; }
+.cw-card-name { font-size: 0.7rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
+.cw-card-price { font-size: 0.7rem; font-weight: 700; color: var(--primary); }
+
+/* Input */
+.cw-input-bar { padding: 0.8rem; border-top: 1px solid var(--border-color); background: white; }
+.cw-suggestions { display: flex; gap: 0.4rem; margin-bottom: 0.6rem; overflow-x: auto; scrollbar-width: none; }
+.cw-suggestions::-webkit-scrollbar { display: none; }
+.cw-suggestion-chip {
+    background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 20px;
+    padding: 0.25rem 0.6rem; font-size: 0.7rem; color: var(--text-secondary); cursor: pointer; white-space: nowrap; transition: 0.2s;
+}
+.cw-suggestion-chip:hover { background: var(--bg-highlight); color: var(--primary); border-color: var(--primary); }
+.cw-form { display: flex; gap: 0.4rem; }
+.cw-form input {
+    flex: 1; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 20px;
+    padding: 0.5rem 1rem; font-size: 0.85rem; outline: none; transition: 0.2s;
+}
+.cw-form input:focus { border-color: var(--primary); background: white; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+.cw-send-btn { border-radius: 50% !important; width: 36px; height: 36px; padding: 0 !important; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+/* Typing indicator */
+.cw-typing span {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted);
+    animation: cwTyping 1s infinite; margin-right: 2px;
+}
+.cw-typing span:nth-child(2) { animation-delay: 0.2s; }
+.cw-typing span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes cwTyping { 0%,80%,100%{transform:scale(0.6);opacity:0.4} 40%{transform:scale(1);opacity:1} }
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const fab = document.getElementById('chatbotFab');
+    const cwWindow = document.getElementById('chatbotWindow');
+    const cwCloseBtn = document.getElementById('cwCloseBtn');
+    const cwBody = document.getElementById('cwBody');
+    const cwForm = document.getElementById('cwForm');
+    const cwInput = document.getElementById('cwInput');
+
+    // Toggle window
+    function toggleChat() {
+        if (cwWindow.classList.contains('hidden')) {
+            cwWindow.classList.remove('hidden');
+            cwWindow.classList.add('visible');
+            setTimeout(() => cwInput.focus(), 300);
+        } else {
+            cwWindow.classList.remove('visible');
+            cwWindow.classList.add('hidden');
+        }
+    }
+
+    fab.addEventListener('click', toggleChat);
+    cwCloseBtn.addEventListener('click', toggleChat);
+
+    function cwAddMessage(text, isUser) {
+        const bubble = document.createElement('div');
+        bubble.className = 'cw-bubble ' + (isUser ? 'user' : 'bot');
+        bubble.innerHTML = `
+            <div class="cw-bubble-avatar">${isUser ? '👤' : '🤖'}</div>
+            <div class="cw-bubble-content">${formatText(text)}</div>
+        `;
+        cwBody.appendChild(bubble);
+        cwBody.scrollTop = cwBody.scrollHeight;
+    }
+
+    function cwAddProductCards(products) {
+        if (!products || products.length === 0) return;
+        const wrapper = document.createElement('div');
+        wrapper.className = 'cw-bubble bot';
+        const grid = document.createElement('div');
+        grid.className = 'cw-product-grid';
+        products.forEach(p => {
+            grid.innerHTML += `
+            <a href="${p.detail_url}" class="cw-product-card" target="_blank">
+                <div class="cw-img-wrapper">
+                    <img src="${p.gambar_url}" alt="${p.nama}" onerror="this.src=''; this.onerror=null; this.parentElement.style.background='#EEF2FF';">
+                </div>
+                <div class="cw-card-body">
+                    <div class="cw-card-name">${p.nama}</div>
+                    <div class="cw-card-price">${p.harga_fmt}</div>
+                </div>
+            </a>`;
+        });
+        wrapper.appendChild(grid);
+        cwBody.appendChild(wrapper);
+        cwBody.scrollTop = cwBody.scrollHeight;
+    }
+
+    function cwAddTyping() {
+        const bubble = document.createElement('div');
+        bubble.className = 'cw-bubble bot';
+        bubble.id = 'cwTypingIndicator';
+        bubble.innerHTML = `
+            <div class="cw-bubble-avatar">🤖</div>
+            <div class="cw-bubble-content"><div class="cw-typing"><span></span><span></span><span></span></div></div>
+        `;
+        cwBody.appendChild(bubble);
+        cwBody.scrollTop = cwBody.scrollHeight;
+    }
+
+    function cwRemoveTyping() {
+        const el = document.getElementById('cwTypingIndicator');
+        if (el) el.remove();
+    }
+
+    function formatText(text) {
+        return text
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/\n/g, '<br>');
+    }
+
+    window.cwSendSuggestion = function(text) {
+        cwSendMessage(text);
+    };
+
+    async function cwSendMessage(msg) {
+        cwAddMessage(msg, true);
+        cwInput.value = '';
+        cwAddTyping();
+
+        try {
+            const res = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: msg })
+            });
+            const data = await res.json();
+            cwRemoveTyping();
+            if (data.reply) cwAddMessage(data.reply, false);
+            if (data.products && data.products.length > 0) {
+                cwAddProductCards(data.products);
+            }
+        } catch (err) {
+            cwRemoveTyping();
+            cwAddMessage('Maaf, terjadi kesalahan koneksi. Coba lagi ya! 🙏', false);
+        }
+    }
+
+    cwForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const msg = cwInput.value.trim();
+        if (msg) cwSendMessage(msg);
+    });
+});
+</script>

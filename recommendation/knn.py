@@ -3,9 +3,9 @@ Algoritma K-Nearest Neighbor (KNN) untuk Cold-Start Problem.
 
 Digunakan ketika user baru belum memiliki rating.
 Menghitung Cosine Similarity antar produk berdasarkan fitur:
-- Kategori (one-hot encoding)
-- Harga (normalized)
-- Rating rata-rata (normalized)
+- Kategori (one-hot encoding) — bobot 2.0
+- Harga (normalized)          — bobot 0.5
+- Rating rata-rata (normalized)— bobot 1.0
 
 Jika user sudah mengisi preferensi (onboarding), KNN akan membuat
 "virtual user profile" dari preferensi tersebut dan mencocokkan
@@ -20,37 +20,52 @@ Preferensi yang didukung:
 Alur KNN:
 1. Data produk diambil dari DB (hanya yang tersedia/stok > 0)
 2. Feature matrix dibangun dari kategori (one-hot), harga, dan avg_rating
-3. Untuk cold-start generic → anchor = produk top-rated, cari K tetangga
-4. Untuk personalized → virtual user profile, cosine similarity ke semua produk
-5. Untuk produk serupa → cosine similarity dari produk tertentu ke semua lainnya
+3. Bobot fitur diterapkan agar kategori lebih dominan dalam similarity
+4. Untuk cold-start generic → anchor = produk top-rated, cari K tetangga
+5. Untuk personalized → virtual user profile, cosine similarity ke semua produk
+6. Untuk produk serupa → cosine similarity dari produk tertentu ke semua lainnya
+7. Fallback otomatis jika hasil rekomendasi kurang dari n_recommendations
+
+Perubahan v2:
+- Bobot fitur: kategori ×2.0, harga ×0.5, rating ×1.0
+- Penalti harga diperlunak (soft penalty) — tidak memblokir produk sepenuhnya
+- Fallback top-rated untuk kategori dengan produk sedikit
 """
 
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import MinMaxScaler
 
+# ── Bobot fitur ──────────────────────────────────────────────────────────────
+# Kategori dinaikkan agar similarity antar produk se-kategori lebih tinggi.
+# Harga diturunkan agar tidak mendominasi ketika range harga lebar.
+WEIGHT_KATEGORI = 2.0
+WEIGHT_HARGA    = 0.5
+WEIGHT_RATING   = 1.0
+
 
 def build_product_features(products_data, kategori_ids):
     """
-    Membuat feature matrix untuk semua produk.
+    Membuat feature matrix berbobot untuk semua produk.
 
     Args:
-        products_data: list of dict {'id', 'harga', 'kategori_id', 'avg_rating', 'total_rating'}
+        products_data: list of dict {'id', 'harga', 'kategori_id',
+                                     'avg_rating', 'total_rating'}
         kategori_ids: list of semua kategori id unik
 
     Returns:
-        product_ids: list of product ids
-        feature_matrix: numpy array (n_products, n_features)
+        product_ids   : list of product ids
+        feature_matrix: numpy array (n_products, n_features) — sudah berbobot
     """
     if not products_data:
         return [], np.array([])
 
     product_ids = [p['id'] for p in products_data]
-    n_products = len(products_data)
-    n_kategori = len(kategori_ids)
+    n_products  = len(products_data)
+    n_kategori  = len(kategori_ids)
 
-    # Feature: one-hot kategori + harga normalized + avg_rating normalized
-    n_features = n_kategori + 2  # kategori + harga + avg_rating 
+    # n_features = one-hot kategori + harga + avg_rating
+    n_features     = n_kategori + 2
     feature_matrix = np.zeros((n_products, n_features))
 
     # Kategori one-hot encoding
@@ -59,10 +74,10 @@ def build_product_features(products_data, kategori_ids):
         if p['kategori_id'] in kategori_id_to_idx:
             feature_matrix[i, kategori_id_to_idx[p['kategori_id']]] = 1.0
 
-    # Harga normalized
+    # Harga normalized (MinMaxScaler)
     harga_values = np.array([p['harga'] for p in products_data]).reshape(-1, 1)
     if harga_values.max() > harga_values.min():
-        scaler = MinMaxScaler()
+        scaler           = MinMaxScaler()
         harga_normalized = scaler.fit_transform(harga_values).flatten()
     else:
         harga_normalized = np.zeros(n_products)
@@ -72,9 +87,12 @@ def build_product_features(products_data, kategori_ids):
     avg_ratings = np.array([p.get('avg_rating', 0) for p in products_data])
     feature_matrix[:, n_kategori + 1] = avg_ratings / 5.0
 
-    # Catatan: sklearn cosine_similarity() sudah menangani normalisasi L2
-    # secara internal, sehingga tidak perlu normalisasi manual di sini.
+    # Terapkan bobot fitur
+    feature_matrix[:, :n_kategori]     *= WEIGHT_KATEGORI
+    feature_matrix[:, n_kategori]      *= WEIGHT_HARGA
+    feature_matrix[:, n_kategori + 1]  *= WEIGHT_RATING
 
+    # sklearn cosine_similarity() menangani normalisasi L2 secara internal.
     return product_ids, feature_matrix
 
 
@@ -82,47 +100,49 @@ def build_user_profile_vector(preferred_kategori_ids, harga_min, harga_max,
                                kategori_ids, all_harga_values, rating_min=3.0):
     """
     Membuat virtual user profile vector dari preferensi onboarding.
-    Vector ini memiliki dimensi yang sama dengan product feature vector,
-    sehingga bisa dihitung Cosine Similarity-nya.
+    Vector ini memiliki dimensi dan bobot yang sama dengan product feature
+    vector sehingga Cosine Similarity-nya sebanding.
 
     Args:
         preferred_kategori_ids: list kategori_id yang dipilih user
-        harga_min: harga minimum preferensi
-        harga_max: harga maksimum preferensi
-        kategori_ids: semua kategori ids (untuk indexing)
-        all_harga_values: semua harga produk (untuk normalisasi)
-        rating_min: rating minimum produk yang diinginkan (1-5)
+        harga_min             : harga minimum preferensi
+        harga_max             : harga maksimum preferensi
+        kategori_ids          : semua kategori ids (untuk indexing)
+        all_harga_values      : semua harga produk (untuk normalisasi)
+        rating_min            : rating minimum produk yang diinginkan (1-5)
 
     Returns:
-        user_vector: numpy array (1, n_features)
+        user_vector: numpy array (1, n_features) — sudah berbobot
     """
     n_kategori = len(kategori_ids)
-    n_features = n_kategori + 2
+    n_features  = n_kategori + 2
     user_vector = np.zeros(n_features)
 
-    # One-hot kategori yang dipilih user (normalize jika multiple)
+    # One-hot kategori yang dipilih user (bobot rata per kategori)
     kategori_id_to_idx = {kid: idx for idx, kid in enumerate(kategori_ids)}
     if preferred_kategori_ids:
-        weight = 1.0 / len(preferred_kategori_ids)  # Equal weight for each preferred category
+        weight = 1.0 / len(preferred_kategori_ids)
         for kat_id in preferred_kategori_ids:
             if kat_id in kategori_id_to_idx:
                 user_vector[kategori_id_to_idx[kat_id]] = weight
 
     # Harga: normalize titik tengah range user
     if all_harga_values.max() > all_harga_values.min():
-        # Hitung midpoint budget user
         effective_max = min(harga_max, all_harga_values.max())
-        midpoint = (harga_min + effective_max) / 2.0
-        # Normalize ke skala yang sama
-        normalized = (midpoint - all_harga_values.min()) / (all_harga_values.max() - all_harga_values.min())
-        user_vector[n_kategori] = max(0, min(1, normalized))
+        midpoint      = (harga_min + effective_max) / 2.0
+        normalized    = (midpoint - all_harga_values.min()) / \
+                        (all_harga_values.max() - all_harga_values.min())
+        user_vector[n_kategori] = max(0.0, min(1.0, normalized))
     else:
         user_vector[n_kategori] = 0.5
 
-    # Rating min: normalize ke 0-1 (user ingin produk dengan rating >= rating_min)
+    # Rating min: normalize ke 0-1
     user_vector[n_kategori + 1] = max(0.0, min(1.0, rating_min / 5.0))
 
-    # Catatan: tidak perlu L2 normalize — cosine_similarity() menangani ini.
+    # Terapkan bobot yang sama dengan build_product_features
+    user_vector[:n_kategori]     *= WEIGHT_KATEGORI
+    user_vector[n_kategori]      *= WEIGHT_HARGA
+    user_vector[n_kategori + 1]  *= WEIGHT_RATING
 
     return user_vector.reshape(1, -1)
 
@@ -133,15 +153,15 @@ def _apply_sort(recommended_ids, products_data, sort_by):
 
     Args:
         recommended_ids: list of product ids (urutan sudah berdasarkan similarity)
-        products_data: list of dict produk
-        sort_by: 'rating' | 'harga_asc' | 'harga_desc' | 'terbaru'
+        products_data  : list of dict produk
+        sort_by        : 'rating' | 'harga_asc' | 'harga_desc' | 'terbaru'
 
     Returns:
         sorted list of product ids
     """
+    prod_map = {p['id']: p for p in products_data}
+
     if sort_by == 'rating':
-        # Urut berdasarkan avg_rating desc, lalu total_rating desc
-        prod_map = {p['id']: p for p in products_data}
         return sorted(
             recommended_ids,
             key=lambda pid: (
@@ -151,16 +171,48 @@ def _apply_sort(recommended_ids, products_data, sort_by):
             reverse=True
         )
     elif sort_by == 'harga_asc':
-        prod_map = {p['id']: p for p in products_data}
-        return sorted(recommended_ids, key=lambda pid: prod_map.get(pid, {}).get('harga', 0))
+        return sorted(recommended_ids,
+                      key=lambda pid: prod_map.get(pid, {}).get('harga', 0))
     elif sort_by == 'harga_desc':
-        prod_map = {p['id']: p for p in products_data}
-        return sorted(recommended_ids, key=lambda pid: prod_map.get(pid, {}).get('harga', 0), reverse=True)
+        return sorted(recommended_ids,
+                      key=lambda pid: prod_map.get(pid, {}).get('harga', 0),
+                      reverse=True)
     elif sort_by == 'terbaru':
-        # Urut berdasarkan id desc (id lebih besar = lebih baru)
         return sorted(recommended_ids, reverse=True)
+
     # Default: kembalikan urutan similarity
     return recommended_ids
+
+
+def _fallback_top_rated(existing_ids, products_data, n_needed):
+    """
+    Fallback: ambil produk top-rated yang belum ada di existing_ids.
+    Digunakan ketika hasil rekomendasi utama kurang dari n_recommendations,
+    biasanya karena kategori yang diminta memiliki produk sedikit di DB.
+
+    Args:
+        existing_ids : set/list product ids yang sudah direkomendasikan
+        products_data: list of dict semua produk
+        n_needed     : berapa produk tambahan yang dibutuhkan
+
+    Returns:
+        list of product ids (paling banyak n_needed item)
+    """
+    existing_set = set(existing_ids)
+
+    # Bayesian confidence score — sama seperti di knn_recommend
+    def bayesian_score(p):
+        avg_r   = p.get('avg_rating', 0)
+        total_r = p.get('total_rating', 0)
+        min_r   = 2
+        global_avg = 3.5
+        conf = total_r / (total_r + min_r)
+        return conf * avg_r + (1 - conf) * global_avg
+
+    candidates = [p for p in products_data if p['id'] not in existing_set]
+    candidates.sort(key=bayesian_score, reverse=True)
+
+    return [p['id'] for p in candidates[:n_needed]]
 
 
 def knn_recommend_personalized(products_data, kategori_ids, preferred_kategori_ids,
@@ -171,23 +223,25 @@ def knn_recommend_personalized(products_data, kategori_ids, preferred_kategori_i
     KNN Personalized Recommendation berdasarkan preferensi user.
 
     Langkah:
-    1. Buat feature matrix semua produk
+    1. Buat feature matrix berbobot untuk semua produk
     2. Buat virtual user profile dari preferensi (kategori, harga, rating_min)
     3. Hitung Cosine Similarity antara user profile dan semua produk
-    4. Filter produk berdasarkan range harga dan rating_min
-    5. Urutkan sesuai sort_by
-    6. Return top-N produk paling mirip
+    4. Terapkan soft penalty untuk produk di luar range harga (×0.6, bukan ×0.3)
+       sehingga produk kategori-relevan tetap bisa muncul meski harga sedikit di luar
+    5. Terapkan soft penalty untuk produk dengan avg_rating < rating_min (×0.7)
+    6. Urutkan sesuai sort_by
+    7. Fallback top-rated jika hasil masih kurang dari n_recommendations
 
     Args:
-        products_data: list of dict dari database
-        kategori_ids: list of kategori_ids
+        products_data         : list of dict dari database
+        kategori_ids          : list of kategori_ids
         preferred_kategori_ids: kategori yang dipilih user saat onboarding
-        harga_min: minimum harga preferensi
-        harga_max: maximum harga preferensi
-        rating_min: rating minimum produk yang diinginkan (1-5)
-        sort_by: urutan rekomendasi ('rating', 'harga_asc', 'harga_desc', 'terbaru')
-        n_recommendations: jumlah rekomendasi
-        k_neighbors: jumlah tetangga KNN
+        harga_min             : minimum harga preferensi
+        harga_max             : maximum harga preferensi
+        rating_min            : rating minimum produk yang diinginkan (1-5)
+        sort_by               : urutan rekomendasi
+        n_recommendations     : jumlah rekomendasi
+        k_neighbors           : jumlah tetangga KNN
 
     Returns:
         list of produk_ids yang direkomendasikan
@@ -200,26 +254,26 @@ def knn_recommend_personalized(products_data, kategori_ids, preferred_kategori_i
     if feature_matrix.size == 0:
         return []
 
-    # Buat user profile vector
-    all_harga = np.array([p['harga'] for p in products_data])
+    # Buat user profile vector (sudah berbobot)
+    all_harga   = np.array([p['harga'] for p in products_data])
     user_vector = build_user_profile_vector(
         preferred_kategori_ids, harga_min, harga_max,
         kategori_ids, all_harga, rating_min
     )
 
-    # Hitung Cosine Similarity antara user profile vs semua produk
+    # Hitung Cosine Similarity
     similarities = cosine_similarity(user_vector, feature_matrix).flatten()
 
-    # Penalti produk di luar range harga
+    # Soft penalty harga (×0.6) — produk kategori-relevan tetap bisa muncul
     for i, p in enumerate(products_data):
         if p['harga'] < harga_min or p['harga'] > harga_max:
-            similarities[i] *= 0.3
+            similarities[i] *= 0.6
 
-    # Penalti produk dengan rating di bawah rating_min
+    # Soft penalty rating (×0.7)
     for i, p in enumerate(products_data):
         avg_r = p.get('avg_rating', 0)
         if avg_r > 0 and avg_r < rating_min:
-            similarities[i] *= 0.5
+            similarities[i] *= 0.7
 
     # Sort by similarity descending
     sorted_indices = np.argsort(similarities)[::-1]
@@ -233,6 +287,12 @@ def knn_recommend_personalized(products_data, kategori_ids, preferred_kategori_i
     # Terapkan preferensi urutan
     recommended = _apply_sort(recommended, products_data, sort_by)
 
+    # Fallback jika hasil kurang (kategori dengan produk sedikit)
+    if len(recommended) < n_recommendations:
+        n_needed   = n_recommendations - len(recommended)
+        fallback   = _fallback_top_rated(recommended, products_data, n_needed)
+        recommended = recommended + fallback
+
     return recommended[:n_recommendations]
 
 
@@ -241,17 +301,17 @@ def knn_recommend(products_data, kategori_ids, n_recommendations=8, k_neighbors=
     KNN Cold-Start Recommendation (tanpa preferensi user).
 
     Langkah:
-    1. Buat feature matrix semua produk
+    1. Buat feature matrix berbobot untuk semua produk
     2. Hitung cosine similarity antar produk
-    3. Ambil produk dengan rating terbaik sebagai anchor
-    4. Cari K tetangga terdekat dari anchor
-    5. Return top-N produk
+    3. Ambil produk dengan Bayesian confidence score terbaik sebagai anchor
+    4. Cari K tetangga terdekat dari setiap anchor
+    5. Fallback top-rated jika hasil masih kurang dari n_recommendations
 
     Args:
-        products_data: list of dict dari database
-        kategori_ids: list of kategori ids
+        products_data    : list of dict dari database
+        kategori_ids     : list of kategori ids
         n_recommendations: jumlah rekomendasi
-        k_neighbors: jumlah tetangga KNN
+        k_neighbors      : jumlah tetangga KNN
 
     Returns:
         list of produk_ids yang direkomendasikan
@@ -267,23 +327,20 @@ def knn_recommend(products_data, kategori_ids, n_recommendations=8, k_neighbors=
     # Hitung Cosine Similarity matrix
     similarity_matrix = cosine_similarity(feature_matrix)
 
-    # Cari anchor: produk dengan Bayesian confidence score tertinggi
+    # Bayesian confidence score
     scores = []
     for p in products_data:
-        avg_r = p.get('avg_rating', 0)
+        avg_r   = p.get('avg_rating', 0)
         total_r = p.get('total_rating', 0)
-        # Bayesian confidence: balance rating dengan jumlah rating
-        min_ratings = 2  # Minimum ratings untuk confidence
-        global_avg = 3.5  # Global average rating
-        confidence = total_r / (total_r + min_ratings)
-        score = confidence * avg_r + (1 - confidence) * global_avg
+        min_ratings = 2
+        global_avg  = 3.5
+        confidence  = total_r / (total_r + min_ratings)
+        score       = confidence * avg_r + (1 - confidence) * global_avg
         scores.append(score)
 
     scores = np.array(scores)
 
-    # Jika tidak ada produk dengan rating, gunakan semua produk secara acak
     if scores.max() == 0:
-        # Deterministik: urutkan berdasarkan produk terbaru (created_at desc)
         sorted_by_recency = sorted(
             range(len(products_data)),
             key=lambda i: products_data[i].get('created_at', ''),
@@ -292,34 +349,39 @@ def knn_recommend(products_data, kategori_ids, n_recommendations=8, k_neighbors=
         return [product_ids[i] for i in sorted_by_recency[:n_recommendations]]
 
     # Ambil top anchor products
-    n_anchors = min(3, len(product_ids))
+    n_anchors     = min(3, len(product_ids))
     anchor_indices = np.argsort(scores)[-n_anchors:][::-1]
 
     # Kumpulkan semua tetangga dari anchor
     recommended_set = set()
     for anchor_idx in anchor_indices:
-        similarities = similarity_matrix[anchor_idx]
-        # Sort by similarity descending, skip self
+        similarities    = similarity_matrix[anchor_idx]
         neighbor_indices = np.argsort(similarities)[::-1]
 
         k = min(k_neighbors, len(neighbor_indices))
         for idx in neighbor_indices[:k]:
             if idx != anchor_idx:
                 recommended_set.add(product_ids[idx])
-
             if len(recommended_set) >= n_recommendations:
                 break
-
         if len(recommended_set) >= n_recommendations:
             break
 
-    # Tambahkan anchor juga jika belum cukup
+    # Tambahkan anchor jika belum cukup
     for anchor_idx in anchor_indices:
         recommended_set.add(product_ids[anchor_idx])
         if len(recommended_set) >= n_recommendations:
             break
 
-    return list(recommended_set)[:n_recommendations]
+    recommended = list(recommended_set)
+
+    # Fallback top-rated jika masih kurang
+    if len(recommended) < n_recommendations:
+        n_needed  = n_recommendations - len(recommended)
+        fallback  = _fallback_top_rated(recommended, products_data, n_needed)
+        recommended = recommended + fallback
+
+    return recommended[:n_recommendations]
 
 
 def knn_recommend_similar(target_produk_id, products_data, kategori_ids,
@@ -329,15 +391,16 @@ def knn_recommend_similar(target_produk_id, products_data, kategori_ids,
     Digunakan di halaman detail produk untuk menampilkan "Produk Serupa".
 
     Langkah:
-    1. Buat feature matrix semua produk
+    1. Buat feature matrix berbobot untuk semua produk
     2. Cari index produk target
     3. Hitung Cosine Similarity antara produk target vs semua produk
     4. Return top-N produk yang paling mirip (selain dirinya sendiri)
+    5. Fallback top-rated jika hasil kurang
 
     Args:
-        target_produk_id: ID produk yang sedang dilihat
-        products_data: list of dict dari database
-        kategori_ids: list of kategori ids
+        target_produk_id : ID produk yang sedang dilihat
+        products_data    : list of dict dari database
+        kategori_ids     : list of kategori ids
         n_recommendations: jumlah produk serupa
 
     Returns:
@@ -351,18 +414,14 @@ def knn_recommend_similar(target_produk_id, products_data, kategori_ids,
     if feature_matrix.size == 0:
         return []
 
-    # Cari index produk target
     try:
         target_idx = product_ids.index(target_produk_id)
     except ValueError:
-        # Produk target tidak ditemukan di data, fallback ke generic
         return knn_recommend(products_data, kategori_ids, n_recommendations)
 
-    # Hitung similarity antara target vs semua produk
     target_vector = feature_matrix[target_idx].reshape(1, -1)
-    similarities = cosine_similarity(target_vector, feature_matrix).flatten()
+    similarities  = cosine_similarity(target_vector, feature_matrix).flatten()
 
-    # Sort by similarity descending, skip self
     sorted_indices = np.argsort(similarities)[::-1]
 
     recommended = []
@@ -372,20 +431,27 @@ def knn_recommend_similar(target_produk_id, products_data, kategori_ids,
         if len(recommended) >= n_recommendations:
             break
 
-    return recommended
+    # Fallback jika produk serupa kurang (kategori dengan sedikit produk)
+    if len(recommended) < n_recommendations:
+        n_needed  = n_recommendations - len(recommended)
+        fallback  = _fallback_top_rated(recommended, products_data, n_needed)
+        recommended = recommended + fallback
+
+    return recommended[:n_recommendations]
 
 
 def get_knn_data_from_db(include_unavailable=False):
     """
     Ambil data produk dari database untuk KNN.
-    
+
     Args:
-        include_unavailable: jika True, ambil semua produk termasuk yang tidak tersedia.
-                            Default False (hanya produk yang tersedia dan stok > 0).
-    
+        include_unavailable: jika True, ambil semua produk termasuk yang
+                             tidak tersedia. Default False (hanya produk
+                             tersedia dan stok > 0).
+
     Returns:
         products_data: list of dict produk
-        kategori_ids: list of kategori ids
+        kategori_ids : list of kategori ids
     """
     from models.database import get_db
     db = get_db()
@@ -399,13 +465,13 @@ def get_knn_data_from_db(include_unavailable=False):
     '''
     if not include_unavailable:
         query += ' WHERE p.tersedia = 1 AND p.stok > 0'
-    
+
     query += ' GROUP BY p.id'
 
-    products = db.execute(query).fetchall()
+    products      = db.execute(query).fetchall()
     products_data = [dict(p) for p in products]
 
     kategori_rows = db.execute('SELECT id FROM kategori ORDER BY id').fetchall()
-    kategori_ids = [row['id'] for row in kategori_rows]
+    kategori_ids  = [row['id'] for row in kategori_rows]
 
     return products_data, kategori_ids

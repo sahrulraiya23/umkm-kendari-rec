@@ -1,38 +1,95 @@
 """
-Neural Collaborative Filtering (NCF) untuk Rekomendasi Produk.
+Neural Collaborative Filtering (NCF) untuk Rekomendasi Produk UMKM Kendari.
 
-Arsitektur: GMF (Generalized Matrix Factorization) + MLP (Multi-Layer Perceptron)
-digabung di layer akhir untuk prediksi rating.
+Arsitektur: GMF (Generalized Matrix Factorization) dengan BPR Loss
+- Menggunakan Bayesian Personalized Ranking (BPR) yang jauh lebih cocok
+  untuk data sparse dibanding MSE.
+- Negative sampling otomatis saat training.
+- Inference menggunakan dot product langsung dari embeddings.
 
 Digunakan setelah user memiliki cukup rating (>= NCF_MIN_RATINGS).
+Fallback ke KNN otomatis jika user belum ada di training data.
 """
 
 import os
 import numpy as np
 import json
 
-# Suppress TF warningsz
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 NCF_MODEL_PATH = os.path.join(os.path.dirname(__file__), 'saved_model', 'ncf_model.keras')
 NCF_MAPPINGS_PATH = os.path.join(os.path.dirname(__file__), 'ncf_mappings.json')
 
 
-def build_ncf_model(n_users, n_products, embedding_dim=64, mlp_layers=None):
+# ── Negative Sampling ──────────────────────────────────────────────────────────
+
+def prepare_bpr_pairs(ratings_data, n_negatives=4):
     """
-    Membangun arsitektur NCF (GMF + MLP) dengan hyperparameter optimal.
+    Buat BPR training pairs: (user, item_positif, item_negatif).
+
+    Untuk setiap rating positif, sample n_negatives item yang belum pernah
+    dirating user tersebut sebagai negatif.
 
     Args:
-        n_users: jumlah user unik
-        n_products: jumlah produk unik
-        embedding_dim: dimensi embedding (default: 64 untuk representasi lebih baik)
-        mlp_layers: list ukuran hidden layers MLP (default: [128, 64, 32])
+        ratings_data : list of dict {'user_id', 'produk_id', 'score'}
+        n_negatives  : jumlah negatif per positif (default 4)
 
     Returns:
-        model: Keras model
+        tuple: (users_pos, items_pos, users_neg, items_neg) — semua list int index
     """
-    if mlp_layers is None:
-        mlp_layers = [128, 64, 32]
+    # Kumpulkan semua produk yang pernah dirating (universe)
+    all_produk = list(set(r['produk_id'] for r in ratings_data))
+
+    # Produk yang sudah dirating per user
+    rated_per_user = {}
+    for r in ratings_data:
+        uid = r['user_id']
+        pid = r['produk_id']
+        rated_per_user.setdefault(uid, set()).add(pid)
+
+    users_pos, items_pos, users_neg, items_neg = [], [], [], []
+
+    for r in ratings_data:
+        uid = r['user_id']
+        pid = r['produk_id']
+
+        # Kandidat negatif: produk yang belum dirating user ini
+        neg_candidates = [p for p in all_produk if p not in rated_per_user[uid]]
+        if not neg_candidates:
+            continue
+
+        n_sample = min(n_negatives, len(neg_candidates))
+        sampled  = np.random.choice(neg_candidates, size=n_sample, replace=False)
+
+        for neg_pid in sampled:
+            users_pos.append(uid)
+            items_pos.append(pid)
+            users_neg.append(uid)
+            items_neg.append(neg_pid)
+
+    return users_pos, items_pos, users_neg, items_neg
+
+
+# ── Model Architecture ─────────────────────────────────────────────────────────
+
+def build_ncf_model(n_users, n_products, embedding_dim=32):
+    """
+    Bangun model NCF dengan BPR loss (GMF — dot product).
+
+    Embedding dim dikecilkan ke 32 karena data relatif kecil.
+    Arsitektur lebih sederhana (tanpa MLP) agar tidak overfit.
+
+    Input saat training : [user_idx, pos_item_idx, neg_item_idx]
+    Output              : sigmoid(score_pos - score_neg) → target selalu 1
+
+    Args:
+        n_users      : jumlah user unik
+        n_products   : jumlah produk unik
+        embedding_dim: dimensi embedding (default 32)
+
+    Returns:
+        model: Keras model siap compile
+    """
     try:
         import tensorflow as tf
         from tensorflow import keras
@@ -41,172 +98,188 @@ def build_ncf_model(n_users, n_products, embedding_dim=64, mlp_layers=None):
         print("TensorFlow tidak tersedia. NCF tidak dapat digunakan.")
         return None
 
-    # Input layers
     user_input = keras.Input(shape=(1,), name='user_input')
-    product_input = keras.Input(shape=(1,), name='product_input')
+    pos_input  = keras.Input(shape=(1,), name='pos_input')
+    neg_input  = keras.Input(shape=(1,), name='neg_input')
 
-    # === GMF Branch ===
-    gmf_user_embedding = layers.Embedding(n_users, embedding_dim, 
-                                         embeddings_regularizer=tf.keras.regularizers.l2(0.0005),
-                                         name='gmf_user_emb')(user_input)
-    gmf_user_embedding = layers.Flatten()(gmf_user_embedding)
+    # Shared embedding layers
+    user_emb_layer = layers.Embedding(
+        n_users, embedding_dim,
+        embeddings_regularizer=tf.keras.regularizers.l2(0.001),
+        name='user_emb'
+    )
+    item_emb_layer = layers.Embedding(
+        n_products, embedding_dim,
+        embeddings_regularizer=tf.keras.regularizers.l2(0.001),
+        name='item_emb'
+    )
 
-    gmf_product_embedding = layers.Embedding(n_products, embedding_dim, 
-                                            embeddings_regularizer=tf.keras.regularizers.l2(0.0005),
-                                            name='gmf_product_emb')(product_input)
-    gmf_product_embedding = layers.Flatten()(gmf_product_embedding)
+    user_vec = layers.Flatten()(user_emb_layer(user_input))   # (batch, emb_dim)
+    pos_vec  = layers.Flatten()(item_emb_layer(pos_input))    # (batch, emb_dim)
+    neg_vec  = layers.Flatten()(item_emb_layer(neg_input))    # (batch, emb_dim)
 
-    gmf_output = layers.Multiply()([gmf_user_embedding, gmf_product_embedding])
+    # Score = dot product (GMF)
+    pos_score = layers.Dot(axes=1, name='pos_score')([user_vec, pos_vec])  # (batch, 1)
+    neg_score = layers.Dot(axes=1, name='neg_score')([user_vec, neg_vec])  # (batch, 1)
 
-    # === MLP Branch ===
-    mlp_user_embedding = layers.Embedding(n_users, embedding_dim, 
-                                         embeddings_regularizer=tf.keras.regularizers.l2(0.0005),
-                                         name='mlp_user_emb')(user_input)
-    mlp_user_embedding = layers.Flatten()(mlp_user_embedding)
+    # BPR: sigmoid(pos_score - neg_score)
+    # Target akan selalu 1.0 → model belajar pos_score > neg_score
+    diff   = layers.Subtract(name='bpr_diff')([pos_score, neg_score])
+    output = layers.Activation('sigmoid', name='bpr_output')(diff)
 
-    mlp_product_embedding = layers.Embedding(n_products, embedding_dim, 
-                                            embeddings_regularizer=tf.keras.regularizers.l2(0.0005),
-                                            name='mlp_product_emb')(product_input)
-    mlp_product_embedding = layers.Flatten()(mlp_product_embedding)
-
-    mlp_concat = layers.Concatenate()([mlp_user_embedding, mlp_product_embedding])
-
-    for i, units in enumerate(mlp_layers):
-        mlp_concat = layers.Dense(units, activation='relu', 
-                                 kernel_regularizer=tf.keras.regularizers.l2(0.0005),
-                                 name=f'mlp_dense_{i}')(mlp_concat)
-        mlp_concat = layers.Dropout(0.1)(mlp_concat)
-
-    # === Gabungkan GMF + MLP ===
-    combined = layers.Concatenate()([gmf_output, mlp_concat])
-    combined = layers.Dense(32, activation='relu', 
-                           kernel_regularizer=tf.keras.regularizers.l2(0.0005),
-                           name='combined_dense')(combined)
-    output = layers.Dense(1, activation='sigmoid', name='output')(combined)
-
-    model = keras.Model(inputs=[user_input, product_input], outputs=output)
+    model = keras.Model(
+        inputs=[user_input, pos_input, neg_input],
+        outputs=output
+    )
     model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=0.0005),
-        loss='mean_squared_error',
-        metrics=['mae']
+        optimizer=keras.optimizers.Adam(learning_rate=0.001),
+        loss='binary_crossentropy',   # BPR loss via BCE dengan target=1
+        metrics=['accuracy']
     )
 
     return model
 
 
-def train_ncf_model(ratings_data, epochs=50):
+# ── Training ───────────────────────────────────────────────────────────────────
+
+def train_ncf_model(ratings_data, epochs=100):
     """
-    Training model NCF dengan data rating dari database.
+    Training model NCF-BPR dengan data rating dari database.
+
+    Langkah:
+    1. Buat BPR pairs (positif + negatif sampling)
+    2. Build model GMF dengan shared embeddings
+    3. Train dengan BPR loss (binary_crossentropy, target=1)
+    4. Simpan model dan mappings ke disk
 
     Args:
         ratings_data: list of dict {'user_id', 'produk_id', 'score'}
+        epochs      : maksimum epoch (early stopping aktif)
 
     Returns:
-        dict: hasil training {'success', 'message', 'history'}
+        dict: {'success', 'message', 'n_users', 'n_products', 'n_ratings', 'n_pairs', 'epochs'}
     """
     from config import NCF_MIN_RATINGS
+
     if not ratings_data or len(ratings_data) < NCF_MIN_RATINGS:
         return {
             'success': False,
-            'message': f'Data rating tidak cukup (minimal {NCF_MIN_RATINGS}, saat ini {len(ratings_data)})'
+            'message': (
+                f'Data rating tidak cukup '
+                f'(minimal {NCF_MIN_RATINGS}, saat ini {len(ratings_data or [])})'
+            )
         }
 
     try:
         import tensorflow as tf
+        from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
     except ImportError:
         return {'success': False, 'message': 'TensorFlow tidak tersedia'}
 
-    # Mapping user_id dan produk_id ke index kontinu (0, 1, 2, ...)
-    user_ids = sorted(list(set(r['user_id'] for r in ratings_data)))
-    produk_ids = sorted(list(set(r['produk_id'] for r in ratings_data)))
+    # ── Mapping ID ke index kontinu ────────────────────────────────────────────
+    user_ids   = sorted(set(r['user_id']   for r in ratings_data))
+    produk_ids = sorted(set(r['produk_id'] for r in ratings_data))
 
-    user_to_idx = {uid: idx for idx, uid in enumerate(user_ids)}
-    produk_to_idx = {pid: idx for idx, pid in enumerate(produk_ids)}
+    user_to_idx   = {uid: i for i, uid in enumerate(user_ids)}
+    produk_to_idx = {pid: i for i, pid in enumerate(produk_ids)}
 
-    n_users = len(user_ids)
+    n_users    = len(user_ids)
     n_products = len(produk_ids)
 
-    # Siapkan data training
-    user_array = np.array([user_to_idx[r['user_id']] for r in ratings_data])
-    produk_array = np.array([produk_to_idx[r['produk_id']] for r in ratings_data])
-    # Normalize score ke 0-1
-    scores = np.array([r['score'] for r in ratings_data], dtype=np.float32) / 5.0
+    # ── BPR Pairs ──────────────────────────────────────────────────────────────
+    users_pos, items_pos, users_neg, items_neg = prepare_bpr_pairs(
+        ratings_data, n_negatives=4
+    )
 
-    # Build & train model
+    if not users_pos:
+        return {
+            'success': False,
+            'message': 'Tidak cukup variasi data untuk BPR training'
+        }
+
+    u_arr   = np.array([user_to_idx[u]   for u in users_pos], dtype=np.int32)
+    p_arr   = np.array([produk_to_idx[p] for p in items_pos], dtype=np.int32)
+    n_arr   = np.array([produk_to_idx[p] for p in items_neg], dtype=np.int32)
+    targets = np.ones(len(u_arr), dtype=np.float32)  # BPR: selalu 1
+
+    # ── Build & Train ──────────────────────────────────────────────────────────
     model = build_ncf_model(n_users, n_products)
     if model is None:
         return {'success': False, 'message': 'Gagal membuat model'}
 
-    # Early stopping untuk mencegah overfitting
-    callbacks = []
-    use_validation = len(ratings_data) >= 10
-    if use_validation:
-        try:
-            from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
-            callbacks.append(EarlyStopping(
-                monitor='val_loss', patience=10, restore_best_weights=True
-            ))
-            # Learning rate scheduler: kurangi LR jika val_loss tidak meningkat
-            callbacks.append(ReduceLROnPlateau(
-                monitor='val_loss', factor=0.5, patience=5, min_lr=0.00001, verbose=0
-            ))
-        except ImportError:
-            pass
+    callbacks = [
+        EarlyStopping(
+            monitor='loss',
+            patience=10,
+            restore_best_weights=True,
+            verbose=0
+        ),
+        ReduceLROnPlateau(
+            monitor='loss',
+            factor=0.5,
+            patience=5,
+            min_lr=1e-5,
+            verbose=0
+        )
+    ]
 
     history = model.fit(
-        [user_array, produk_array],
-        scores,
+        [u_arr, p_arr, n_arr],
+        targets,
         epochs=epochs,
-        batch_size=16,
-        validation_split=0.15 if use_validation else 0.0,
+        batch_size=32,
         callbacks=callbacks,
         verbose=0
     )
 
-    # Simpan model & mappings
+    actual_epochs = len(history.history['loss'])
+    final_loss    = history.history['loss'][-1]
+    final_acc     = history.history['accuracy'][-1]
+
+    # ── Simpan Model & Mappings ────────────────────────────────────────────────
     os.makedirs(os.path.dirname(NCF_MODEL_PATH), exist_ok=True)
     model.save(NCF_MODEL_PATH)
 
     mappings = {
-        'user_to_idx': {str(k): v for k, v in user_to_idx.items()},
+        'user_to_idx':   {str(k): v for k, v in user_to_idx.items()},
         'produk_to_idx': {str(k): v for k, v in produk_to_idx.items()},
-        'idx_to_user': {str(v): k for k, v in user_to_idx.items()},
         'idx_to_produk': {str(v): k for k, v in produk_to_idx.items()},
-        'n_users': n_users,
+        'n_users':    n_users,
         'n_products': n_products
     }
     with open(NCF_MAPPINGS_PATH, 'w') as f:
         json.dump(mappings, f)
 
-    final_loss = history.history['loss'][-1]
-    final_mae = history.history['mae'][-1]
-    actual_epochs = len(history.history['loss'])
-
-    # Invalidate cached model agar prediksi menggunakan model terbaru
-    global _cached_model
-    _cached_model = None
+    # Invalidate cache
+    global _cached_model, _cached_model_mtime
+    _cached_model       = None
+    _cached_model_mtime = 0
 
     return {
-        'success': True,
-        'message': f'Training berhasil! Loss: {final_loss:.4f}, MAE: {final_mae:.4f} ({actual_epochs} epochs)',
-        'n_users': n_users,
+        'success':    True,
+        'message':    (
+            f'Training BPR berhasil! '
+            f'Loss: {final_loss:.4f}, Acc: {final_acc:.4f} '
+            f'({actual_epochs} epochs, {len(u_arr)} pairs)'
+        ),
+        'n_users':    n_users,
         'n_products': n_products,
-        'n_ratings': len(ratings_data),
-        'epochs': actual_epochs
+        'n_ratings':  len(ratings_data),
+        'n_pairs':    len(u_arr),
+        'epochs':     actual_epochs
     }
 
 
 # ── Model Caching ──────────────────────────────────────────────────────────────
-# Cache model di memory agar tidak perlu load dari disk setiap request.
-# Model di-reload otomatis jika file berubah (setelah retrain).
-_cached_model = None
+
+_cached_model       = None
 _cached_model_mtime = 0
 
 
 def _get_cached_model():
     """
-    Load model NCF dari cache memory. Jika file model berubah (setelah
-    retrain), model dimuat ulang secara otomatis.
+    Load model NCF dari memory cache.
+    Auto-reload jika file model berubah (setelah retrain).
     """
     global _cached_model, _cached_model_mtime
 
@@ -220,24 +293,67 @@ def _get_cached_model():
 
     mtime = os.path.getmtime(NCF_MODEL_PATH)
     if _cached_model is None or mtime > _cached_model_mtime:
-        _cached_model = tf.keras.models.load_model(NCF_MODEL_PATH)
+        _cached_model       = tf.keras.models.load_model(NCF_MODEL_PATH)
         _cached_model_mtime = mtime
 
     return _cached_model
 
 
-def ncf_recommend(user_id, all_produk_ids, rated_produk_ids, n_recommendations=8):
+# ── Inference ──────────────────────────────────────────────────────────────────
+
+def _get_embedding_scores(model, user_idx, produk_indices):
     """
-    Prediksi rating menggunakan model NCF, lalu rekomendasikan produk dengan prediksi tertinggi.
+    Hitung score user vs setiap produk menggunakan dot product embeddings.
+
+    Tidak butuh item negatif saat inference — cukup ambil
+    user_embedding · item_embedding untuk setiap kandidat produk.
 
     Args:
-        user_id: ID user
-        all_produk_ids: semua produk_id di database
-        rated_produk_ids: produk_id yang sudah di-rating user
-        n_recommendations: jumlah rekomendasi
+        model        : Keras model yang sudah diload
+        user_idx     : index user (int)
+        produk_indices: list index produk yang akan di-score
 
     Returns:
-        list of produk_ids yang direkomendasikan
+        np.ndarray: scores shape (len(produk_indices),)
+    """
+    import tensorflow as tf
+
+    n = len(produk_indices)
+    u_arr = np.array([user_idx] * n, dtype=np.int32)
+    p_arr = np.array(produk_indices,  dtype=np.int32)
+
+    # Ambil embeddings langsung dari layer
+    user_emb_layer = model.get_layer('user_emb')
+    item_emb_layer = model.get_layer('item_emb')
+
+    # Predict embedding per batch (lebih efisien dari submodel baru)
+    user_vecs = user_emb_layer(u_arr).numpy()  # (n, emb_dim)
+    item_vecs = item_emb_layer(p_arr).numpy()  # (n, emb_dim)
+
+    # Dot product per baris
+    scores = np.sum(user_vecs * item_vecs, axis=1)  # (n,)
+    return scores
+
+
+def ncf_recommend(user_id, all_produk_ids, rated_produk_ids, n_recommendations=8):
+    """
+    Rekomendasikan produk menggunakan NCF-BPR.
+
+    Alur:
+    1. Cek model & mappings tersedia
+    2. Cek user ada di training data → jika tidak, trigger retrain & return []
+    3. Filter produk belum dirating & ada di mappings
+    4. Hitung score via dot product embeddings
+    5. Return top-N produk
+
+    Args:
+        user_id          : ID user (int/str)
+        all_produk_ids   : semua produk_id di database
+        rated_produk_ids : produk_id yang sudah dirating user (set/list)
+        n_recommendations: jumlah rekomendasi (default 8)
+
+    Returns:
+        list of produk_ids yang direkomendasikan (kosong jika gagal → fallback ke KNN)
     """
     if not os.path.exists(NCF_MODEL_PATH) or not os.path.exists(NCF_MAPPINGS_PATH):
         return []
@@ -246,38 +362,44 @@ def ncf_recommend(user_id, all_produk_ids, rated_produk_ids, n_recommendations=8
     with open(NCF_MAPPINGS_PATH, 'r') as f:
         mappings = json.load(f)
 
-    user_to_idx = mappings['user_to_idx']
+    user_to_idx   = mappings['user_to_idx']
     produk_to_idx = mappings['produk_to_idx']
 
     # Cek apakah user ada di training data
     user_key = str(user_id)
     if user_key not in user_to_idx:
-        # User baru: trigger retrain di background (dengan cooldown)
-        from .engine import _trigger_bg_retrain
-        _trigger_bg_retrain()
-        return []  # Fallback ke KNN sementara
+        # User baru belum ada di model → trigger retrain background
+        try:
+            from .engine import _trigger_bg_retrain
+            _trigger_bg_retrain()
+        except Exception:
+            pass
+        return []  # Fallback ke KNN
 
     user_idx = user_to_idx[user_key]
 
-    # Load model dari cache (hindari load dari disk setiap request)
+    # Load model dari cache
     model = _get_cached_model()
     if model is None:
         return []
 
-    # Prediksi untuk semua produk yang belum di-rating
-    unrated_produk_ids = [pid for pid in all_produk_ids if pid not in rated_produk_ids]
-    valid_unrated = [pid for pid in unrated_produk_ids if str(pid) in produk_to_idx]
+    # Filter: belum dirating & ada di mappings produk
+    rated_set   = set(str(pid) for pid in rated_produk_ids)
+    candidates  = [
+        pid for pid in all_produk_ids
+        if str(pid) not in rated_set and str(pid) in produk_to_idx
+    ]
 
-    if not valid_unrated:
+    if not candidates:
         return []
 
-    user_array = np.array([user_idx] * len(valid_unrated))
-    produk_array = np.array([produk_to_idx[str(pid)] for pid in valid_unrated])
+    produk_indices = [produk_to_idx[str(pid)] for pid in candidates]
 
-    predictions = model.predict([user_array, produk_array], verbose=0).flatten()
+    # Hitung scores
+    scores = _get_embedding_scores(model, user_idx, produk_indices)
 
-    # Sort by predicted rating descending
-    sorted_indices = np.argsort(predictions)[::-1]
-    recommended_ids = [valid_unrated[i] for i in sorted_indices[:n_recommendations]]
+    # Sort descending → ambil top-N
+    sorted_idx    = np.argsort(scores)[::-1]
+    recommended   = [candidates[i] for i in sorted_idx[:n_recommendations]]
 
-    return recommended_ids
+    return recommended

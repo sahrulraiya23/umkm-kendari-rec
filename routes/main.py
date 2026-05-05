@@ -194,9 +194,8 @@ def profil():
 
 @main_bp.route('/chatbot')
 def chatbot_page():
-    """Halaman chatbot."""
-    kategori_list = Kategori.get_all()
-    return render_template('chatbot.html', kategori_list=kategori_list)
+    """Redirect ke halaman utama karena chatbot sekarang berupa widget."""
+    return redirect(url_for('main.index'))
 
 
 @main_bp.route('/api/chat', methods=['POST'])
