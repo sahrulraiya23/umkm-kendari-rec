@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Operasional Per Toko{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="d-flex justify-between align-center" style="margin-bottom: 1rem;">
+        <div>
+            <h1 style="margin:0;"><i class="bi bi-shop"></i> Operasional Per Toko</h1>
+            <p style="margin:0.35rem 0 0; color: var(--text-secondary);">
+                Jadwal ini dipakai chatbot untuk pertanyaan seperti "Toko A hari ini buka?"
+            </p>
+        </div>
+        <a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i> Kembali ke Dashboard
+        </a>
+    </div>
+
+    <div class="glass-card" style="margin-bottom: 1rem;">
+        <form method="GET" class="d-flex gap-2 align-center">
+            <label for="seller_id" style="font-weight: 600;">Pilih Toko</label>
+            <select id="seller_id" name="seller_id" class="form-control" style="max-width: 380px;">
+                {% for seller in sellers %}
+                <option value="{{ seller.id }}" {% if seller.id == selected_seller.id %}selected{% endif %}>
+                    {{ seller.nama_lengkap }} ({{ seller.username }})
+                </option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-primary btn-sm">Tampilkan</button>
+        </form>
+    </div>
+
+    <div class="glass-card">
+        <h3 style="margin-top: 0;">Jadwal: {{ selected_seller.nama_lengkap }}</h3>
+        <form method="POST">
+            <input type="hidden" name="seller_id" value="{{ selected_seller.id }}">
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Hari</th>
+                            <th>Status</th>
+                            <th>Jam Buka</th>
+                            <th>Jam Tutup</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for d in schedule %}
+                        <tr>
+                            <td><strong>{{ d.hari_nama }}</strong></td>
+                            <td style="min-width: 170px;">
+                                <select name="is_open_{{ d.hari_index }}" class="form-control">
+                                    <option value="1" {% if d.is_open == 1 %}selected{% endif %}>Buka</option>
+                                    <option value="0" {% if d.is_open == 0 %}selected{% endif %}>Tutup</option>
+                                </select>
+                            </td>
+                            <td><input type="time" name="buka_jam_{{ d.hari_index }}" value="{{ d.buka_jam }}" class="form-control"></td>
+                            <td><input type="time" name="tutup_jam_{{ d.hari_index }}" value="{{ d.tutup_jam }}" class="form-control"></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="d-flex justify-end" style="margin-top: 1rem;">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-save"></i> Simpan Jadwal Toko
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

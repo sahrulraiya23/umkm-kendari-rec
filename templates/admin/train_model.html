@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Training Model NCF{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="dashboard-header">
+        <h1><i class="bi bi-cpu"></i> Training Model NCF</h1>
+        <p>Training Neural Collaborative Filtering untuk rekomendasi produk</p>
+    </div>
+
+    <div class="action-bar">
+        <a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i> Kembali
+        </a>
+    </div>
+
+    <div class="glass-card" style="max-width: 600px;">
+        <h3 style="margin-bottom: 1rem;"><i class="bi bi-info-circle"></i> Informasi</h3>
+        <p style="color: var(--text-secondary); margin-bottom: 1rem;">
+            Model NCF (Neural Collaborative Filtering) menggunakan arsitektur <strong>GMF + MLP</strong>
+            untuk mempelajari pola rating pengguna dan memprediksi produk yang akan disukai.
+        </p>
+        <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">
+            <strong>Minimum data:</strong> Diperlukan minimal 5 rating dari pengguna untuk memulai training.
+        </p>
+
+        <form method="POST" id="trainForm">
+            <button type="submit" class="btn btn-success btn-lg" id="trainBtn" onclick="this.disabled=true; this.innerHTML='<i class=\'bi bi-hourglass-split\'></i> Sedang Training...'; this.form.submit();">
+                <i class="bi bi-play-circle"></i> Mulai Training
+            </button>
+        </form>
+
+        {% if result %}
+        <div class="training-result mt-2">
+            <h3>
+                {% if result.success %}
+                <i class="bi bi-check-circle" style="color: var(--secondary);"></i> Hasil Training
+                {% else %}
+                <i class="bi bi-x-circle" style="color: var(--accent);"></i> Training Gagal
+                {% endif %}
+            </h3>
+
+            {% if result.success %}
+            <div class="result-item">
+                <span class="label">Jumlah User</span>
+                <span class="value">{{ result.n_users }}</span>
+            </div>
+            <div class="result-item">
+                <span class="label">Jumlah Produk</span>
+                <span class="value">{{ result.n_products }}</span>
+            </div>
+            <div class="result-item">
+                <span class="label">Jumlah Rating</span>
+                <span class="value">{{ result.n_ratings }}</span>
+            </div>
+            <div class="result-item">
+                <span class="label">Epochs</span>
+                <span class="value">{{ result.epochs }}</span>
+            </div>
+            {% endif %}
+
+            <div class="result-item">
+                <span class="label">Status</span>
+                <span class="value">{{ result.message }}</span>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

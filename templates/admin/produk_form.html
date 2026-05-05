@@ -1,0 +1,346 @@
+{% extends "base.html" %}
+{% block title %}Tambah/Edit Produk | Seller{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="dashboard-header">
+        <h1>
+            {% if produk %}
+            <i class="bi bi-pencil-square"></i> Edit Produk
+            {% else %}
+            <i class="bi bi-plus-circle"></i> Tambah Produk Baru
+            {% endif %}
+        </h1>
+        <p>{% if produk %}Perbarui informasi produk Anda{% else %}Isi detail produk UMKM yang ingin Anda jual{% endif %}</p>
+    </div>
+
+    <div class="action-bar">
+        <a href="{{ url_for('admin.kelola_produk') }}" class="btn btn-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i> Kembali ke List Produk
+        </a>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 380px; gap: 1.5rem; align-items: start;">
+
+        <!-- Form Card -->
+        <div class="glass-card">
+            <h3 style="margin-bottom: 1.5rem; font-size: 1rem; color: var(--text-primary); display:flex; align-items:center; gap:0.5rem;">
+                <i class="bi bi-info-circle" style="color: var(--primary);"></i> Informasi Produk
+            </h3>
+            <form method="POST" enctype="multipart/form-data" id="produkForm">
+
+                <div class="form-group">
+                    <label for="nama">Nama Produk <span style="color:var(--danger);">*</span></label>
+                    <input type="text" id="nama" name="nama" class="form-control"
+                           placeholder="Contoh: Kerupuk Ikan Khas Kendari"
+                           value="{{ produk.nama if produk else '' }}" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="deskripsi">Deskripsi Produk</label>
+                    <textarea id="deskripsi" name="deskripsi" class="form-control" rows="4"
+                              placeholder="Ceritakan keunggulan dan keunikan produk Anda...">{{ produk.deskripsi if produk else '' }}</textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="harga">Harga (Rp) <span style="color:var(--danger);">*</span></label>
+                    <div style="position:relative;">
+                        <span class="input-prefix">Rp</span>
+                        <input type="number" id="harga" name="harga" class="form-control" style="padding-left: 2.8rem;"
+                               placeholder="0" min="1" value="{{ produk.harga|int if produk else '' }}" required>
+                    </div>
+                </div>
+
+                <!-- GoFood-style Availability Toggle -->
+                <div class="form-group">
+                    <label>Status Ketersediaan Produk</label>
+                    <div class="availability-toggle-card" id="toggleCard">
+                        <div class="availability-info">
+                            <div class="availability-icon" id="toggleIcon">
+                                <i class="bi bi-check-circle-fill" id="toggleIco"></i>
+                            </div>
+                            <div>
+                                <div class="availability-label" id="toggleLabel">Produk Tersedia</div>
+                                <div class="availability-sub" id="toggleSub">Pembeli dapat memesan produk ini</div>
+                            </div>
+                        </div>
+                        <label class="gofood-switch">
+                            <input type="checkbox" name="tersedia" id="tersediaCheck"
+                                   {% if produk is none or produk.tersedia %}checked{% endif %}
+                                   onchange="updateToggleUI()">
+                            <span class="gofood-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Stok internal (opsional) -->
+                <div class="form-group">
+                    <label for="stok">Jumlah Stok <span style="color:var(--text-muted); font-weight:400; font-size:0.8rem;">(opsional, untuk catatan internal)</span></label>
+                    <input type="number" id="stok" name="stok" class="form-control"
+                           placeholder="0" min="0" value="{{ produk.stok if produk else '0' }}">
+                </div>
+
+                <div class="form-group">
+                    <label for="kategori_id">Kategori</label>
+                    <select id="kategori_id" name="kategori_id" class="form-control">
+                        <option value="">-- Pilih Kategori --</option>
+                        {% for kat in kategori_list %}
+                        <option value="{{ kat.id }}" {% if produk and produk.kategori_id == kat.id %}selected{% endif %}>
+                            {{ kat.nama }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Image Upload -->
+                <div class="form-group">
+                    <label>Gambar Produk</label>
+                    <div class="upload-zone" id="uploadZone" onclick="document.getElementById('gambar').click()">
+                        <div id="uploadPlaceholder">
+                            <i class="bi bi-cloud-upload upload-icon"></i>
+                            <p class="upload-text">Klik atau drag & drop gambar di sini</p>
+                            <p class="upload-hint">JPG, PNG, WebP · Maks 5MB</p>
+                        </div>
+                        <img id="imagePreview" class="upload-preview" style="display:none;" alt="preview">
+                    </div>
+                    <input type="file" id="gambar" name="gambar" accept="image/*" style="display:none;"
+                           onchange="previewImage(this)">
+                    {% if produk and produk.gambar != 'default.jpg' %}
+                    <div class="current-image-info">
+                        <img src="{{ url_for('static', filename='uploads/' + produk.gambar) }}"
+                             alt="" style="width:48px; height:48px; border-radius:8px; object-fit:cover;">
+                        <span style="font-size:0.85rem; color:var(--text-muted);">Gambar saat ini (kosongkan jika tidak ingin mengubah)</span>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-lg" style="width: 100%; margin-top: 0.5rem;">
+                    {% if produk %}
+                    <i class="bi bi-check-lg"></i> Simpan Perubahan
+                    {% else %}
+                    <i class="bi bi-plus-lg"></i> Publikasikan Produk
+                    {% endif %}
+                </button>
+            </form>
+        </div>
+
+        <!-- Right Panel: Tips -->
+        <div>
+            <div class="glass-card tips-card">
+                <h4><i class="bi bi-lightbulb-fill" style="color: var(--accent);"></i> Tips Produk yang Laris</h4>
+                <ul class="tips-list">
+                    <li><i class="bi bi-check-circle-fill"></i> Gunakan foto produk cerah dan tajam</li>
+                    <li><i class="bi bi-check-circle-fill"></i> Judul produk mencakup kata kunci pencarian</li>
+                    <li><i class="bi bi-check-circle-fill"></i> Deskripsi detail: bahan, ukuran, keunggulan</li>
+                    <li><i class="bi bi-check-circle-fill"></i> Harga kompetitif sesuai pasar lokal</li>
+                    <li><i class="bi bi-check-circle-fill"></i> Stok selalu diperbarui agar akurat</li>
+                </ul>
+            </div>
+
+            <div class="glass-card mt-2" style="padding: 1rem 1.2rem;">
+                <h4 style="font-size:0.9rem; margin-bottom:0.7rem; color:var(--text-secondary);">
+                    <i class="bi bi-info-circle" style="color: var(--primary);"></i> Informasi
+                </h4>
+                <p style="font-size:0.82rem; color:var(--text-muted); line-height:1.6; margin:0;">
+                    Produk yang dipublikasikan akan langsung tampil di beranda dan dapat direkomendasikan ke pembeli
+                    melalui sistem KNN/NCF kami.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.input-prefix {
+    position: absolute;
+    left: 0.8rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 0.9rem;
+    pointer-events: none;
+}
+
+/* Upload Zone */
+.upload-zone {
+    border: 2px dashed var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    background: var(--bg-secondary);
+    min-height: 140px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+.upload-zone:hover {
+    border-color: var(--primary);
+    background: rgba(26,86,219,0.03);
+}
+.upload-icon { font-size: 2.5rem; color: var(--primary-light); display: block; margin-bottom: 0.5rem; }
+.upload-text { font-weight: 600; color: var(--text-secondary); margin: 0 0 0.2rem; font-size: 0.9rem; }
+.upload-hint { font-size: 0.78rem; color: var(--text-muted); margin: 0; }
+.upload-preview {
+    max-width: 100%;
+    max-height: 200px;
+    border-radius: var(--radius-sm);
+    object-fit: contain;
+}
+.current-image-info {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    margin-top: 0.7rem;
+    padding: 0.6rem 0.8rem;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+}
+
+/* Tips card */
+.tips-card { background: linear-gradient(135deg, rgba(26,86,219,0.04), rgba(14,165,233,0.04)); }
+.tips-card h4 { font-size: 0.95rem; color: var(--text-primary); margin-bottom: 1rem; display:flex; align-items:center; gap:0.5rem; }
+.tips-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+.tips-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+.tips-list li i { color: var(--success); font-size: 0.85rem; flex-shrink: 0; margin-top: 0.1rem; }
+
+/* GoFood-style availability toggle */
+.availability-toggle-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.2rem;
+    border-radius: var(--radius-md);
+    border: 1.5px solid var(--border-color);
+    background: var(--bg-secondary);
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+.availability-toggle-card.available {
+    border-color: rgba(16,185,129,0.5);
+    background: rgba(16,185,129,0.05);
+}
+.availability-toggle-card.unavailable {
+    border-color: rgba(239,68,68,0.4);
+    background: rgba(239,68,68,0.04);
+}
+.availability-info { display: flex; align-items: center; gap: 1rem; }
+.availability-icon {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem;
+    transition: all 0.3s;
+}
+.availability-icon.avail { background: rgba(16,185,129,0.15); color: #10b981; }
+.availability-icon.unavail { background: rgba(239,68,68,0.12); color: #ef4444; }
+.availability-label { font-weight: 700; font-size: 0.95rem; color: var(--text-primary); }
+.availability-sub { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.15rem; }
+
+/* GoFood Switch */
+.gofood-switch { position: relative; display: inline-block; width: 52px; height: 28px; cursor: pointer; flex-shrink: 0; }
+.gofood-switch input { opacity: 0; width: 0; height: 0; }
+.gofood-slider {
+    position: absolute; inset: 0;
+    background: #d1d5db;
+    border-radius: 999px;
+    transition: background 0.3s;
+}
+.gofood-slider::before {
+    content: '';
+    position: absolute;
+    width: 22px; height: 22px;
+    left: 3px; top: 3px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.3s;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+}
+.gofood-switch input:checked + .gofood-slider { background: #10b981; }
+.gofood-switch input:checked + .gofood-slider::before { transform: translateX(24px); }
+
+@media (max-width: 900px) {
+    div[style*="grid-template-columns: 1fr 380px"] { grid-template-columns: 1fr !important; }
+}
+</style>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function previewImage(input) {
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const preview = document.getElementById('imagePreview');
+            const placeholder = document.getElementById('uploadPlaceholder');
+            preview.src = e.target.result;
+            preview.style.display = 'block';
+            placeholder.style.display = 'none';
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+
+// Drag & drop support
+const zone = document.getElementById('uploadZone');
+zone.addEventListener('dragover', e => { e.preventDefault(); zone.style.borderColor = 'var(--primary)'; zone.style.background = 'rgba(26,86,219,0.05)'; });
+zone.addEventListener('dragleave', () => { zone.style.borderColor = ''; zone.style.background = ''; });
+zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.style.borderColor = '';
+    zone.style.background = '';
+    const dt = e.dataTransfer;
+    if (dt.files.length) {
+        document.getElementById('gambar').files = dt.files;
+        previewImage(document.getElementById('gambar'));
+    }
+});
+
+// GoFood Toggle UI
+function updateToggleUI() {
+    const isChecked = document.getElementById('tersediaCheck').checked;
+    const card = document.getElementById('toggleCard');
+    const iconObj = document.getElementById('toggleIcon');
+    const icoObj = document.getElementById('toggleIco');
+    const label = document.getElementById('toggleLabel');
+    const sub = document.getElementById('toggleSub');
+
+    if (isChecked) {
+        card.classList.add('available');
+        card.classList.remove('unavailable');
+        iconObj.classList.add('avail');
+        iconObj.classList.remove('unavail');
+        icoObj.className = 'bi bi-check-circle-fill';
+        label.textContent = 'Produk Tersedia';
+        label.style.color = '#10b981';
+        sub.textContent = 'Pembeli dapat memesan produk ini';
+    } else {
+        card.classList.add('unavailable');
+        card.classList.remove('available');
+        iconObj.classList.add('unavail');
+        iconObj.classList.remove('avail');
+        icoObj.className = 'bi bi-x-circle-fill';
+        label.textContent = 'Produk Habis';
+        label.style.color = '#ef4444';
+        sub.textContent = 'Produk disembunyikan dari pembeli';
+    }
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', () => {
+    updateToggleUI();
+});
+</script>
+{% endblock %}

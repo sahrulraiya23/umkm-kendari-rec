@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Daftar{% endblock %}
+
+{% block content %}
+<div class="auth-container" style="max-width: 540px;">
+    <div class="auth-card">
+        <div class="auth-icon">
+            <i class="bi bi-person-plus"></i>
+        </div>
+        <h2>Buat Akun Baru</h2>
+        <p class="auth-subtitle">Daftar untuk mendapatkan rekomendasi produk UMKM terbaik</p>
+
+        <form method="POST">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                    <label for="nama_lengkap"><i class="bi bi-person"></i> Nama Lengkap *</label>
+                    <input type="text" id="nama_lengkap" name="nama_lengkap" class="form-control"
+                           placeholder="Nama lengkap Anda" value="{{ nama_lengkap|default('') }}" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="username"><i class="bi bi-at"></i> Username *</label>
+                    <input type="text" id="username" name="username" class="form-control"
+                           placeholder="Min 3 karakter" value="{{ username|default('') }}" required>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                    <label for="email"><i class="bi bi-envelope"></i> Email *</label>
+                    <input type="email" id="email" name="email" class="form-control"
+                           placeholder="email@contoh.com" value="{{ email|default('') }}" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="role"><i class="bi bi-people"></i> Daftar Sebagai *</label>
+                    <select id="role" name="role" class="form-control">
+                        <option value="buyer" {% if role|default('buyer') == 'buyer' %}selected{% endif %}>🛒 Pembeli</option>
+                        <option value="seller" {% if role|default('buyer') == 'seller' %}selected{% endif %}>🏪 Penjual UMKM</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                    <label for="no_telepon"><i class="bi bi-phone"></i> No. Telepon</label>
+                    <input type="text" id="no_telepon" name="no_telepon" class="form-control"
+                           placeholder="Opsional" value="{{ no_telepon|default('') }}">
+                </div>
+
+                <div class="form-group">
+                    <label for="alamat"><i class="bi bi-geo-alt"></i> Alamat</label>
+                    <input type="text" id="alamat" name="alamat" class="form-control"
+                           placeholder="Opsional" value="{{ alamat|default('') }}">
+                </div>
+            </div>
+
+            <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 0.5rem 0 1rem;">
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                    <label for="password"><i class="bi bi-lock"></i> Password *</label>
+                    <input type="password" id="password" name="password" class="form-control"
+                           placeholder="Min 6 karakter" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="confirm_password"><i class="bi bi-shield-lock"></i> Konfirmasi *</label>
+                    <input type="password" id="confirm_password" name="confirm_password" class="form-control"
+                           placeholder="Ulangi password" required>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-lg" style="width: 100%; margin-top: 0.5rem; border-radius: var(--radius-sm);">
+                <i class="bi bi-person-plus"></i> Daftar Sekarang
+            </button>
+        </form>
+
+        <div class="auth-footer">
+            Sudah punya akun? <a href="{{ url_for('auth.login') }}">Masuk di sini</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

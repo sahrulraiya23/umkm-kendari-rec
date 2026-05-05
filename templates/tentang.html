@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% block title %}Tentang Sistem{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="dashboard-header" style="text-align: center; border-bottom: none; padding-bottom: 1rem;">
+        <h1 style="justify-content: center;"><i class="bi bi-cpu" style="color: var(--primary);"></i> Tentang Sistem Rekomendasi</h1>
+        <p style="max-width: 600px; margin: 0.5rem auto 0;">Penjelasan algoritma dan teknologi yang digunakan dalam sistem rekomendasi produk UMKM Kota Kendari</p>
+    </div>
+
+    <!-- Overview -->
+    <div class="glass-card mb-3" style="border-left: 4px solid var(--primary);">
+        <h2 style="margin-bottom: 0.8rem; display: flex; align-items: center; gap: 0.5rem;">
+            <i class="bi bi-diagram-3" style="color: var(--primary-light);"></i> Gambaran Umum
+        </h2>
+        <p style="color: var(--text-secondary); line-height: 1.8;">
+            Sistem Rekomendasi Produk UMKM Kota Kendari menggunakan pendekatan <strong>Switching Hybrid Recommendation</strong> —
+            dua algoritma berjalan secara eksklusif berdasarkan kondisi user:
+            <strong>K-Nearest Neighbor (KNN)</strong> aktif saat user baru login atau belum cukup memberikan rating
+            (mengatasi <em>cold-start problem</em>), dan <strong>Neural Collaborative Filtering (NCF)</strong> mengambil alih
+            setelah user memiliki histori rating yang cukup (≥ 3 rating).
+            Sistem secara otomatis <em>beralih (switch)</em> antar algoritma — tidak pernah menggabungkan keduanya sekaligus.
+        </p>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+        <!-- KNN -->
+        <div class="glass-card" style="border-top: 4px solid var(--primary);">
+            <h2 style="margin-bottom: 0.8rem; display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+                <span style="background: linear-gradient(135deg, var(--primary), var(--primary-dark)); padding: 0.4rem 1rem; border-radius: var(--radius-full); font-size: 0.8rem; font-weight: 700; color: white;">KNN</span>
+                K-Nearest Neighbor
+            </h2>
+
+            <h3 style="color: var(--primary); font-size: 0.95rem; margin: 1rem 0 0.5rem; display: flex; align-items: center; gap: 0.4rem;">📌 Kapan Digunakan?</h3>
+            <p style="color: var(--text-secondary); font-size: 0.9rem;">
+                Digunakan saat pengguna baru (cold-start) atau belum memberikan cukup rating (< 3 rating).
+            </p>
+
+            <h3 style="color: var(--primary); font-size: 0.95rem; margin: 1rem 0 0.5rem; display: flex; align-items: center; gap: 0.4rem;">🔬 Cara Kerja</h3>
+            <ol style="color: var(--text-secondary); line-height: 1.8; padding-left: 1.5rem; font-size: 0.88rem;">
+                <li><strong>Feature Extraction</strong> — Setiap produk diubah menjadi feature vector:
+                    <ul style="margin: 0.3rem 0;">
+                        <li>Kategori (One-Hot Encoding)</li>
+                        <li>Harga (Min-Max Normalization)</li>
+                        <li>Rata-rata Rating (0-5 → 0-1)</li>
+                    </ul>
+                </li>
+                <li><strong>Similarity Measurement</strong> — Menghitung <em>Cosine Similarity</em> antar feature vector</li>
+                <li><strong>Anchor Selection</strong> — Memilih produk populer sebagai titik acuan</li>
+                <li><strong>K-Nearest Neighbors</strong> — Menemukan K produk terdekat dari anchor</li>
+                <li><strong>Ranking</strong> — Mengurutkan dan memilih Top-N rekomendasi</li>
+            </ol>
+
+            <h3 style="color: var(--primary); font-size: 0.95rem; margin: 1rem 0 0.5rem; display: flex; align-items: center; gap: 0.4rem;">🎯 Mode Personalized</h3>
+            <p style="color: var(--text-secondary); font-size: 0.88rem;">
+                Jika user mengisi preferensi saat onboarding (kategori favorit & budget), sistem membuat
+                <strong>Virtual User Profile Vector</strong> dan menghitung similarity terhadap semua produk
+                untuk rekomendasi yang lebih personal.
+            </p>
+
+            <div style="background: var(--bg-highlight); border-radius: var(--radius-md); padding: 1rem; margin-top: 1rem; border: 1px solid rgba(37, 99, 235, 0.1);">
+                <h4 style="font-size: 0.85rem; margin-bottom: 0.5rem; color: var(--text-primary);">Formula Cosine Similarity</h4>
+                <code style="color: var(--primary); font-size: 0.82rem; font-weight: 600;">
+                    cos(θ) = (A · B) / (||A|| × ||B||)
+                </code>
+                <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.3rem;">
+                    Dimana A dan B adalah feature vectors dari dua produk
+                </p>
+            </div>
+        </div>
+
+        <!-- NCF -->
+        <div class="glass-card" style="border-top: 4px solid var(--secondary);">
+            <h2 style="margin-bottom: 0.8rem; display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+                <span style="background: linear-gradient(135deg, var(--secondary), #059669); padding: 0.4rem 1rem; border-radius: var(--radius-full); font-size: 0.8rem; font-weight: 700; color: white;">NCF</span>
+                Neural Collaborative Filtering
+            </h2>
+
+            <h3 style="color: var(--secondary); font-size: 0.95rem; margin: 1rem 0 0.5rem; display: flex; align-items: center; gap: 0.4rem;">📌 Kapan Digunakan?</h3>
+            <p style="color: var(--text-secondary); font-size: 0.9rem;">
+                Diaktifkan saat pengguna sudah memiliki minimal 3 rating dan model NCF sudah di-training oleh admin.
+            </p>
+
+            <h3 style="color: var(--secondary); font-size: 0.95rem; margin: 1rem 0 0.5rem; display: flex; align-items: center; gap: 0.4rem;">🧠 Arsitektur</h3>
+            <p style="color: var(--text-secondary); margin-bottom: 0.5rem; font-size: 0.88rem;">Model NCF menggabungkan dua branch:</p>
+            <ol style="color: var(--text-secondary); line-height: 1.8; padding-left: 1.5rem; font-size: 0.88rem;">
+                <li><strong>GMF (Generalized Matrix Factorization)</strong>
+                    <ul><li>Element-wise product dari user & item embedding → Linear Layer</li></ul>
+                </li>
+                <li><strong>MLP (Multi-Layer Perceptron)</strong>
+                    <ul><li>Concatenate user & item embedding → Dense(128) → Dense(64) → Dense(32)</li></ul>
+                </li>
+                <li><strong>NeuMF (Neural Matrix Factorization)</strong>
+                    <ul><li>Gabungkan output GMF & MLP → Dense(1, sigmoid) → Prediksi Rating</li></ul>
+                </li>
+            </ol>
+
+            <h3 style="color: var(--secondary); font-size: 0.95rem; margin: 1rem 0 0.5rem; display: flex; align-items: center; gap: 0.4rem;">⚡ Proses Training</h3>
+            <ol style="color: var(--text-secondary); line-height: 1.8; padding-left: 1.5rem; font-size: 0.88rem;">
+                <li>Mapping user_id & produk_id ke index berurutan</li>
+                <li>Normalize score rating (1-5 → 0-1)</li>
+                <li>Training model dengan Adam Optimizer & Binary Crossentropy</li>
+                <li>Model disimpan sebagai file .h5</li>
+            </ol>
+
+            <div style="background: rgba(8, 145, 178, 0.06); border-radius: var(--radius-md); padding: 1rem; margin-top: 1rem; border: 1px solid rgba(8, 145, 178, 0.12);">
+                <h4 style="font-size: 0.85rem; margin-bottom: 0.5rem; color: var(--text-primary);">Formula Prediksi NCF</h4>
+                <code style="color: var(--secondary); font-size: 0.82rem; font-weight: 600;">
+                    ŷ = σ(h^T [φ_GMF(p_u, q_i) ⊕ φ_MLP(p_u, q_i)])
+                </code>
+                <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.3rem;">
+                    σ = sigmoid, ⊕ = concatenation, p_u = user embedding, q_i = item embedding
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Switching Flow -->
+    <div class="glass-card" style="margin-top: 2rem; border-left: 4px solid var(--accent);">
+        <h2 style="margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;"><i class="bi bi-arrow-left-right" style="color: var(--primary);"></i> Alur Switching Hybrid Engine</h2>
+        <p style="color: var(--text-muted); font-size: 0.82rem; margin-bottom: 1.2rem;">
+            KNN dan NCF digunakan secara <strong>eksklusif</strong> — sistem memilih <em>salah satu</em> tergantung kondisi user, tidak pernah digabungkan.
+        </p>
+        <div class="flow-steps">
+            <div class="flow-step">
+                <div class="flow-num">1</div>
+                <div class="flow-text">
+                    <strong>User membuka halaman</strong>
+                    <span>Sistem memeriksa status login & jumlah rating</span>
+                </div>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+                <div class="flow-num">2</div>
+                <div class="flow-text">
+                    <strong>Belum login / 0 rating?</strong>
+                    <span>→ KNN Cold-Start (produk populer)</span>
+                </div>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+                <div class="flow-num">3</div>
+                <div class="flow-text">
+                    <strong>Punya preferensi?</strong>
+                    <span>→ KNN Personalized (kategori + budget)</span>
+                </div>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+                <div class="flow-num">4</div>
+                <div class="flow-text">
+                    <strong>≥3 rating + model trained?</strong>
+                    <span>→ NCF (Neural Collaborative Filtering)</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tech Stack -->
+    <div class="glass-card" style="margin-top: 2rem;">
+        <h2 style="margin-bottom: 1.2rem; display: flex; align-items: center; gap: 0.5rem;"><i class="bi bi-tools" style="color: var(--accent);"></i> Teknologi</h2>
+        <div class="stats-grid" style="margin-bottom: 0;">
+            <div class="stat-card">
+                <div class="stat-number" style="font-size: 1.5rem;">🐍</div>
+                <div class="stat-label">Python Flask</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" style="font-size: 1.5rem;">🗃️</div>
+                <div class="stat-label">SQLite</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" style="font-size: 1.5rem;">🧮</div>
+                <div class="stat-label">Scikit-Learn</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" style="font-size: 1.5rem;">🧠</div>
+                <div class="stat-label">TensorFlow / Keras</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.flow-steps {
+    display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; justify-content: center;
+}
+.flow-step {
+    display: flex; align-items: flex-start; gap: 0.8rem; background: var(--bg-card);
+    border: 1px solid var(--border-color); border-radius: var(--radius-md);
+    padding: 1rem 1.2rem; min-width: 200px; flex: 1;
+    transition: var(--transition);
+    box-shadow: var(--shadow-xs);
+}
+.flow-step:hover {
+    border-color: rgba(37, 99, 235, 0.2);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+}
+.flow-num {
+    width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 0.85rem; color: white;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+}
+.flow-text strong { display: block; font-size: 0.82rem; margin-bottom: 0.2rem; color: var(--text-primary); }
+.flow-text span { font-size: 0.72rem; color: var(--text-muted); }
+.flow-arrow { font-size: 1.5rem; color: var(--text-muted); }
+@media (max-width: 768px) {
+    .flow-steps { flex-direction: column; }
+    .flow-arrow { transform: rotate(90deg); }
+    div[style*="grid-template-columns: 1fr 1fr"] { grid-template-columns: 1fr !important; }
+}
+</style>
+{% endblock %}

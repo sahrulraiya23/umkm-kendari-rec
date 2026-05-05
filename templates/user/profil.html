@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Profil Saya{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="dashboard-header">
+        <h1><i class="bi bi-person-circle"></i> Profil Saya</h1>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 2rem; align-items: start;">
+        <!-- Info User -->
+        <div class="glass-card" style="text-align: center;">
+            <div style="margin-bottom: 1.5rem;">
+                <div style="width: 90px; height: 90px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), var(--secondary)); display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; font-size: 2.2rem; color: white; font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700; box-shadow: 0 4px 16px rgba(37, 99, 235, 0.3);">
+                    {{ current_user.nama_lengkap[0]|upper }}
+                </div>
+                <h3 style="font-size: 1.2rem; margin-bottom: 0.4rem;">{{ current_user.nama_lengkap }}</h3>
+                <span class="role-badge {{ current_user.role }}">{{ current_user.role|upper }}</span>
+            </div>
+
+            <div style="font-size: 0.88rem; text-align: left;">
+                <div style="padding: 0.6rem 0; border-bottom: 1px solid var(--border-light); color: var(--text-secondary); display: flex; align-items: center; gap: 0.6rem;">
+                    <i class="bi bi-person" style="color: var(--primary); width: 18px;"></i> {{ current_user.username }}
+                </div>
+                <div style="padding: 0.6rem 0; border-bottom: 1px solid var(--border-light); color: var(--text-secondary); display: flex; align-items: center; gap: 0.6rem;">
+                    <i class="bi bi-envelope" style="color: var(--primary); width: 18px;"></i> {{ current_user.email }}
+                </div>
+                {% if current_user.no_telepon %}
+                <div style="padding: 0.6rem 0; border-bottom: 1px solid var(--border-light); color: var(--text-secondary); display: flex; align-items: center; gap: 0.6rem;">
+                    <i class="bi bi-phone" style="color: var(--primary); width: 18px;"></i> {{ current_user.no_telepon }}
+                </div>
+                {% endif %}
+                {% if current_user.alamat %}
+                <div style="padding: 0.6rem 0; color: var(--text-secondary); display: flex; align-items: center; gap: 0.6rem;">
+                    <i class="bi bi-geo-alt" style="color: var(--primary); width: 18px;"></i> {{ current_user.alamat }}
+                </div>
+                {% endif %}
+            </div>
+
+            <div style="margin-top: 1.5rem; background: var(--bg-highlight); border-radius: var(--radius-md); padding: 1.2rem; text-align: center;">
+                <div style="font-size: 2rem; font-weight: 800; color: var(--primary); font-family: 'Plus Jakarta Sans', sans-serif;">{{ rating_count }}</div>
+                <div style="font-size: 0.82rem; color: var(--text-secondary); font-weight: 500;">Rating Diberikan</div>
+            </div>
+
+            {% if current_user.role == 'buyer' %}
+            <div style="margin-top: 1rem;">
+                <a href="{{ url_for('auth.onboarding') }}" class="btn btn-secondary btn-sm" style="width: 100%; border-radius: var(--radius-sm);">
+                    <i class="bi bi-sliders"></i> Update Preferensi
+                </a>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Riwayat Rating -->
+        <div>
+            <div class="section-header">
+                <h2><i class="bi bi-clock-history"></i> Riwayat Rating Saya</h2>
+            </div>
+
+            {% if user_ratings %}
+                {% for rating in user_ratings %}
+                <div class="review-card">
+                    <div class="review-header">
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <a href="{{ url_for('main.detail_produk', produk_id=rating.produk_id) }}" style="font-weight: 700; color: var(--text-primary);">
+                                {{ rating.produk_nama }}
+                            </a>
+                            <span class="stars" style="color: var(--accent); font-size: 0.88rem;">
+                                {% for i in range(5) %}
+                                    {% if i < rating.score %}★{% else %}☆{% endif %}
+                                {% endfor %}
+                            </span>
+                        </div>
+                        <span class="review-date">{{ rating.created_at }}</span>
+                    </div>
+                    {% if rating.review %}
+                    <p class="review-text">{{ rating.review }}</p>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="empty-state">
+                    <i class="bi bi-star"></i>
+                    <p>Anda belum memberikan rating apapun</p>
+                    <a href="{{ url_for('main.index') }}" class="btn btn-primary mt-2" style="border-radius: var(--radius-full);">Jelajahi Produk</a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

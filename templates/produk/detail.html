@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block title %}{{ produk.nama }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <ul class="breadcrumb">
+        <li><a href="{{ url_for('main.index') }}">Beranda</a></li>
+        {% if produk.kategori_nama %}
+        <li><a href="{{ url_for('main.list_produk', kategori=produk.kategori_id) }}">{{ produk.kategori_nama }}</a></li>
+        {% endif %}
+        <li>{{ produk.nama }}</li>
+    </ul>
+
+    <div class="product-detail">
+        <div class="product-image" style="position: relative; height: 500px;">
+            <a class="product-image-wrapper" href="#" style="display: block; width: 100%; height: 100%;">
+                <img src="{{ url_for('static', filename='uploads/' + produk.gambar) }}" alt="{{ produk.nama }}"
+                     onerror="let wrapper = this.closest('.product-image-wrapper'); wrapper.querySelector('img').style.display='none'; wrapper.querySelector('.no-photo-placeholder').style.display='flex';"
+                     style="width: 100%; height: 100%; object-fit: cover; display: block;">
+                <div class="no-photo-placeholder" style="display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0;">
+                    <i class="bi bi-image"></i>
+                    <span>No Photos</span>
+                </div>
+            </a>
+        </div>
+
+        <div class="product-info">
+            <div style="display: inline-flex; align-items: center; gap: 0.4rem; background: var(--bg-highlight); padding: 0.3rem 0.8rem; border-radius: var(--radius-full); font-size: 0.78rem; font-weight: 700; color: var(--secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.8rem;">
+                {{ produk.kategori_nama or 'Umum' }}
+            </div>
+            <h1>{{ produk.nama }}</h1>
+
+            <div class="card-rating mt-1" style="font-size: 1rem; margin-bottom: 0.5rem;">
+                <span class="stars" style="font-size: 1.3rem; color: var(--accent);">
+                    {% for i in range(5) %}
+                        {% if i < produk.avg_rating|round|int %}★{% else %}☆{% endif %}
+                    {% endfor %}
+                </span>
+                <span style="font-weight: 600;">{{ "%.1f"|format(produk.avg_rating) }}</span>
+                <span class="rating-count">({{ produk.total_rating }} ulasan)</span>
+            </div>
+
+            <div class="product-price">Rp {{ "{:,.0f}".format(produk.harga) }}</div>
+
+            <div class="product-meta">
+                <span><i class="bi bi-shop"></i> {{ produk.seller_nama }}</span>
+                <span><i class="bi bi-box"></i> Stok: {{ produk.stok }}</span>
+                <span><i class="bi bi-calendar"></i> {{ produk.created_at }}</span>
+            </div>
+
+            <div class="product-desc">
+                <h3 style="margin-bottom: 0.5rem; font-size: 1rem; color: var(--text-primary);">Deskripsi Produk</h3>
+                {{ produk.deskripsi or 'Belum ada deskripsi.' }}
+            </div>
+
+            {% set wa_number = produk.seller_no_telepon %}
+            {% if wa_number %}
+                {% if wa_number.startswith('0') %}
+                    {% set wa_number = '62' ~ wa_number[1:] %}
+                {% endif %}
+                <a href="https://wa.me/{{ wa_number }}?text=Halo%20kak,%20saya%20tertarik%20dengan%20produk%20{{ produk.nama|urlencode }}%20di%20UMKM%20Kendari." target="_blank" class="btn btn-success" style="width: 100%; border-radius: var(--radius-sm); margin-top: 0.5rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem; background-color: #25D366; border-color: #25D366;">
+                    <i class="bi bi-whatsapp"></i> Hubungi Penjual (WhatsApp)
+                </a>
+            {% else %}
+                <button disabled class="btn btn-secondary" style="width: 100%; border-radius: var(--radius-sm); margin-top: 0.5rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                    <i class="bi bi-whatsapp"></i> Nomor WhatsApp Tidak Tersedia
+                </button>
+            {% endif %}
+
+            <!-- Rating Form -->
+            {% if current_user.is_authenticated and current_user.role == 'buyer' %}
+            <div class="glass-card" style="margin-top: 1.5rem;">
+                <h3 style="margin-bottom: 1rem; font-size: 1.05rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <i class="bi bi-star" style="color: var(--accent);"></i>
+                    {% if user_rating %}Update Rating Anda{% else %}Beri Rating{% endif %}
+                </h3>
+                <form method="POST" action="{{ url_for('main.submit_rating', produk_id=produk.id) }}">
+                    <div class="star-rating" id="starRating">
+                        {% for i in range(5, 0, -1) %}
+                        <input type="radio" id="star{{ i }}" name="score" value="{{ i }}"
+                               {% if user_rating and user_rating.score == i %}checked{% endif %}>
+                        <label for="star{{ i }}">★</label>
+                        {% endfor %}
+                    </div>
+                    <div class="form-group mt-1">
+                        <textarea name="review" class="form-control" rows="3"
+                                  placeholder="Tulis ulasan Anda (opsional)...">{{ user_rating.review if user_rating else '' }}</textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="border-radius: var(--radius-sm);">
+                        <i class="bi bi-send"></i>
+                        {% if user_rating %}Update Rating{% else %}Kirim Rating{% endif %}
+                    </button>
+                </form>
+            </div>
+            {% elif not current_user.is_authenticated %}
+            <div class="glass-card text-center" style="margin-top: 1.5rem;">
+                <i class="bi bi-lock" style="font-size: 1.5rem; color: var(--text-muted); margin-bottom: 0.5rem; display: block;"></i>
+                <p><a href="{{ url_for('auth.login') }}" style="font-weight: 600;">Login</a> untuk memberi rating produk ini</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Reviews -->
+    <section class="section">
+        <div class="section-header">
+            <h2><i class="bi bi-chat-dots"></i> Ulasan ({{ reviews|length }})</h2>
+        </div>
+
+        {% if reviews %}
+            {% for review in reviews %}
+            <div class="review-card">
+                <div class="review-header">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <div style="width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), var(--secondary)); color: white; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 700;">
+                            {{ review.username[0]|upper }}
+                        </div>
+                        <div>
+                            <span class="review-user">{{ review.username }}</span>
+                            <span class="stars" style="margin-left: 0.5rem; color: var(--accent); font-size: 0.85rem;">
+                                {% for i in range(5) %}
+                                    {% if i < review.score %}★{% else %}☆{% endif %}
+                                {% endfor %}
+                            </span>
+                        </div>
+                    </div>
+                    <span class="review-date">{{ review.created_at }}</span>
+                </div>
+                {% if review.review %}
+                <p class="review-text" style="padding-left: 2.6rem;">{{ review.review }}</p>
+                {% endif %}
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="empty-state">
+                <i class="bi bi-chat-left-text"></i>
+                <p>Belum ada ulasan untuk produk ini</p>
+            </div>
+        {% endif %}
+    </section>
+
+    <!-- Produk Serupa -->
+    {% if produk_serupa %}
+    <section class="section">
+        <div class="section-header">
+            <h2><i class="bi bi-grid-3x3-gap"></i> Produk Serupa</h2>
+        </div>
+        <div class="product-grid">
+            {% for p in produk_serupa %}
+            <div class="product-card">
+                <div class="card-image" style="height: 200px; position: relative;">
+                    <a href="{{ url_for('main.detail_produk', produk_id=p.id) }}" class="product-image-wrapper">
+                        <img src="{{ url_for('static', filename='uploads/' + p.gambar) }}" alt="{{ p.nama }}"
+                             onerror="let wrapper = this.closest('.product-image-wrapper'); wrapper.querySelector('img').style.display='none'; wrapper.querySelector('.no-photo-placeholder').style.display='flex';"
+                             style="width: 100%; height: 100%; object-fit: cover; display: block;">
+                        <div class="no-photo-placeholder" style="display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0;">
+                            <i class="bi bi-image"></i>
+                            <span>No Photos</span>
+                        </div>
+                    </a>
+                </div>
+                <div class="card-body">
+                    <div class="card-category">{{ p.kategori_nama or 'Umum' }}</div>
+                    <h3 class="card-title">
+                        <a href="{{ url_for('main.detail_produk', produk_id=p.id) }}">{{ p.nama }}</a>
+                    </h3>
+                    <div class="card-price">Rp {{ "{:,.0f}".format(p.harga) }}</div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+</div>
+{% endblock %}

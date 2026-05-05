@@ -1,0 +1,440 @@
+{% extends "base.html" %}
+{% block title %}Pilih Preferensi Anda{% endblock %}
+
+{% block content %}
+<div class="container">
+    <section class="hero" style="padding-bottom: 1rem;">
+        <h1><i class="bi bi-heart-pulse"></i> Bantu Kami Kenali Anda</h1>
+        <p>Atur preferensi Anda agar rekomendasi KNN lebih akurat dan personal!</p>
+    </section>
+
+    <form method="POST" class="onboarding-form">
+        <!-- Step 1: Pilih Kategori -->
+        <div class="glass-card mb-3">
+            <h2 style="margin-bottom: 0.3rem; font-size: 1.3rem;">
+                <i class="bi bi-grid-3x3-gap" style="color: var(--primary-light);"></i>
+                Kategori apa yang Anda sukai?
+            </h2>
+            <p style="color: var(--text-muted); margin-bottom: 1.2rem; font-size: 0.9rem;">
+                Pilih satu atau lebih kategori produk UMKM favorit Anda
+            </p>
+
+            <div class="pref-grid">
+                {% for kat in kategori_list %}
+                <label class="pref-card" for="kat_{{ kat.id }}">
+                    <input type="checkbox" name="kategori_ids" value="{{ kat.id }}" id="kat_{{ kat.id }}"
+                           {% if kat.id in existing_kat_ids %}checked{% endif %}>
+                    <div class="pref-card-inner">
+                        <i class="{{ kat.icon }}"></i>
+                        <span class="pref-name">{{ kat.nama }}</span>
+                        {% if kat.deskripsi %}
+                        <span class="pref-desc">{{ kat.deskripsi|truncate(50) }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="pref-check"><i class="bi bi-check-lg"></i></div>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Step 2: Range Harga -->
+        <div class="glass-card mb-3">
+            <h2 style="margin-bottom: 0.3rem; font-size: 1.3rem;">
+                <i class="bi bi-cash-stack" style="color: var(--secondary);"></i>
+                Berapa budget Anda?
+            </h2>
+            <p style="color: var(--text-muted); margin-bottom: 1.2rem; font-size: 0.9rem;">
+                Tentukan range harga produk yang sesuai kantong Anda
+            </p>
+
+            <div class="price-range-wrapper">
+                <div class="price-presets">
+                    <button type="button" class="price-preset-btn" onclick="setPrice(0, 50000)">
+                        <i class="bi bi-wallet2"></i>
+                        <span>Di bawah Rp 50rb</span>
+                    </button>
+                    <button type="button" class="price-preset-btn" onclick="setPrice(0, 100000)">
+                        <i class="bi bi-wallet2"></i>
+                        <span>Di bawah Rp 100rb</span>
+                    </button>
+                    <button type="button" class="price-preset-btn" onclick="setPrice(50000, 250000)">
+                        <i class="bi bi-wallet"></i>
+                        <span>Rp 50rb — 250rb</span>
+                    </button>
+                    <button type="button" class="price-preset-btn" onclick="setPrice(100000, 500000)">
+                        <i class="bi bi-cash"></i>
+                        <span>Rp 100rb — 500rb</span>
+                    </button>
+                    <button type="button" class="price-preset-btn" onclick="setPrice(250000, 1000000)">
+                        <i class="bi bi-cash-stack"></i>
+                        <span>Rp 250rb — 1jt</span>
+                    </button>
+                    <button type="button" class="price-preset-btn" onclick="setPrice(0, 999999999)">
+                        <i class="bi bi-infinity"></i>
+                        <span>Semua harga</span>
+                    </button>
+                </div>
+
+                <div class="price-inputs">
+                    <div class="form-group" style="flex: 1;">
+                        <label for="harga_min">Harga Minimum (Rp)</label>
+                        <input type="number" id="harga_min" name="harga_min" class="form-control"
+                               min="0" value="{{ existing_harga_min|int }}" placeholder="0">
+                    </div>
+                    <span style="padding-top: 2rem; color: var(--text-muted); font-size: 1.2rem;">—</span>
+                    <div class="form-group" style="flex: 1;">
+                        <label for="harga_max">Harga Maksimum (Rp)</label>
+                        <input type="number" id="harga_max" name="harga_max" class="form-control"
+                               min="0" value="{{ existing_harga_max|int if existing_harga_max < 999999999 else '' }}"
+                               placeholder="Tidak terbatas">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: Rating Minimum -->
+        <div class="glass-card mb-3">
+            <h2 style="margin-bottom: 0.3rem; font-size: 1.3rem;">
+                <i class="bi bi-star-half" style="color: var(--accent);"></i>
+                Rating minimum produk?
+            </h2>
+            <p style="color: var(--text-muted); margin-bottom: 1.4rem; font-size: 0.9rem;">
+                KNN akan memprioritaskan produk dengan rating minimal yang Anda tentukan
+            </p>
+
+            <div class="rating-slider-wrapper">
+                <div class="rating-presets">
+                    {% for r in [1, 2, 3, 4, 5] %}
+                    <button type="button" class="rating-preset-btn {% if (existing_rating_min|default(3))|int == r %}active{% endif %}"
+                            onclick="setRating({{ r }})">
+                        {{ '★' * r }}{{ '☆' * (5 - r) }}
+                        <span>{{ r }}.0+</span>
+                    </button>
+                    {% endfor %}
+                </div>
+                <input type="hidden" id="rating_min" name="rating_min" value="{{ existing_rating_min|default(3) }}">
+                <p class="rating-info">
+                    <i class="bi bi-info-circle"></i>
+                    Rating terpilih: <strong id="rating_display">{{ existing_rating_min|default(3) }}</strong> bintang ke atas
+                </p>
+            </div>
+        </div>
+
+        <!-- Step 4: Urutan Rekomendasi -->
+        <div class="glass-card mb-3">
+            <h2 style="margin-bottom: 0.3rem; font-size: 1.3rem;">
+                <i class="bi bi-sort-down" style="color: var(--primary);"></i>
+                Urutkan rekomendasi berdasarkan?
+            </h2>
+            <p style="color: var(--text-muted); margin-bottom: 1.2rem; font-size: 0.9rem;">
+                Pilih bagaimana produk rekomendasi akan diurutkan untuk Anda
+            </p>
+
+            <div class="sort-grid">
+                {% set sort_options = [
+                    ('rating',     'bi-star-fill',       'Rating Terbaik',   'Produk dengan ulasan terbaik'),
+                    ('harga_asc',  'bi-sort-numeric-up', 'Harga Termurah',   'Dari harga paling rendah'),
+                    ('harga_desc', 'bi-sort-numeric-down','Harga Tertinggi', 'Dari harga paling tinggi'),
+                    ('terbaru',    'bi-clock-history',   'Terbaru',          'Produk yang baru ditambahkan'),
+                ] %}
+                {% for val, icon, label, desc in sort_options %}
+                <label class="pref-card" for="sort_{{ val }}">
+                    <input type="radio" name="sort_by" value="{{ val }}" id="sort_{{ val }}"
+                           {% if (existing_sort_by|default('rating')) == val %}checked{% endif %}>
+                    <div class="pref-card-inner">
+                        <i class="{{ icon }}"></i>
+                        <span class="pref-name">{{ label }}</span>
+                        <span class="pref-desc">{{ desc }}</span>
+                    </div>
+                    <div class="pref-check"><i class="bi bi-check-lg"></i></div>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Submit -->
+        <div style="text-align: center; padding: 1rem 0 3rem;">
+            <button type="submit" class="btn btn-primary btn-lg" style="min-width: 300px; padding: 1rem 2rem; font-size: 1.1rem;">
+                <i class="bi bi-rocket-takeoff"></i> Simpan & Mulai Jelajahi
+            </button>
+            <div style="margin-top: 0.8rem;">
+                <a href="{{ url_for('main.index') }}" style="color: var(--text-muted); font-size: 0.85rem;">
+                    Lewati untuk sekarang →
+                </a>
+            </div>
+        </div>
+    </form>
+</div>
+
+<style>
+/* --- Preference Grid --- */
+.pref-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1rem;
+}
+
+.sort-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.pref-card {
+    position: relative;
+    cursor: pointer;
+    display: block;
+}
+
+.pref-card input[type="checkbox"],
+.pref-card input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.pref-card-inner {
+    background: #fff;
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 1.4rem;
+    text-align: center;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    box-shadow: var(--shadow-sm);
+}
+
+.pref-card-inner i {
+    font-size: 2rem;
+    color: var(--text-muted);
+    display: block;
+    margin-bottom: 0.6rem;
+    transition: all 0.3s ease;
+}
+
+.pref-name {
+    display: block;
+    font-weight: 700;
+    font-size: 0.95rem;
+    margin-bottom: 0.3rem;
+    color: var(--text-primary);
+}
+
+.pref-desc {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+.pref-check {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--bg-secondary);
+    border: 2px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transform: scale(0.5);
+    transition: all 0.3s ease;
+    color: white;
+    font-size: 0.9rem;
+}
+
+/* Hover state */
+.pref-card:hover .pref-card-inner {
+    border-color: var(--primary-light);
+    transform: translateY(-3px);
+    box-shadow: 0 4px 20px rgba(26, 86, 219, 0.15);
+}
+
+.pref-card:hover .pref-card-inner i {
+    color: var(--primary-light);
+}
+
+/* Checked state */
+.pref-card input:checked ~ .pref-card-inner {
+    border-color: var(--primary);
+    background: rgba(26, 86, 219, 0.05);
+    box-shadow: 0 0 20px rgba(26, 86, 219, 0.15);
+}
+
+.pref-card input:checked ~ .pref-card-inner i {
+    color: var(--primary);
+    transform: scale(1.1);
+}
+
+.pref-card input:checked ~ .pref-check {
+    opacity: 1;
+    transform: scale(1);
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    border-color: var(--primary);
+}
+
+/* --- Price Range --- */
+.price-range-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.price-presets {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.8rem;
+}
+
+.price-preset-btn {
+    background: #fff;
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 0.8rem 1rem;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    box-shadow: var(--shadow-sm);
+}
+
+.price-preset-btn:hover {
+    border-color: var(--secondary);
+    background: rgba(14, 165, 233, 0.06);
+    transform: translateY(-2px);
+}
+
+.price-preset-btn.active {
+    border-color: var(--secondary);
+    background: rgba(14, 165, 233, 0.1);
+    box-shadow: 0 0 15px rgba(14, 165, 233, 0.2);
+}
+
+.price-preset-btn i {
+    color: var(--secondary);
+    font-size: 1.1rem;
+}
+
+.price-inputs {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+/* --- Rating Slider --- */
+.rating-slider-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.rating-presets {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0.8rem;
+}
+
+.rating-preset-btn {
+    background: #fff;
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 0.8rem 0.5rem;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    box-shadow: var(--shadow-sm);
+    letter-spacing: -1px;
+}
+
+.rating-preset-btn:hover {
+    border-color: var(--accent);
+    background: rgba(245, 158, 11, 0.06);
+    transform: translateY(-2px);
+}
+
+.rating-preset-btn.active {
+    border-color: var(--accent);
+    background: rgba(245, 158, 11, 0.1);
+    color: var(--accent);
+    box-shadow: 0 0 15px rgba(245, 158, 11, 0.2);
+}
+
+.rating-info {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    padding: 0.6rem 1rem;
+    background: var(--bg-highlight);
+    border-radius: var(--radius-sm);
+}
+
+.rating-info strong {
+    color: var(--accent);
+}
+
+@media (max-width: 768px) {
+    .pref-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .price-presets {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .price-inputs {
+        flex-direction: column;
+    }
+    .price-inputs span {
+        display: none;
+    }
+    .price-inputs .form-group {
+        width: 100%;
+    }
+    .rating-presets {
+        grid-template-columns: repeat(3, 1fr);
+    }
+    .sort-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function setPrice(min, max) {
+    document.getElementById('harga_min').value = min;
+    if (max >= 999999999) {
+        document.getElementById('harga_max').value = '';
+    } else {
+        document.getElementById('harga_max').value = max;
+    }
+    // Highlight active preset
+    document.querySelectorAll('.price-preset-btn').forEach(function(btn) {
+        btn.classList.remove('active');
+    });
+    event.target.closest('.price-preset-btn').classList.add('active');
+}
+
+function setRating(val) {
+    document.getElementById('rating_min').value = val;
+    document.getElementById('rating_display').textContent = val;
+    document.querySelectorAll('.rating-preset-btn').forEach(function(btn) {
+        btn.classList.remove('active');
+    });
+    event.target.closest('.rating-preset-btn').classList.add('active');
+}
+</script>
+{% endblock %}

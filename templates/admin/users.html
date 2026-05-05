@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Kelola Users{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="dashboard-header">
+        <h1><i class="bi bi-people"></i> Kelola Pengguna</h1>
+        <p>Daftar semua pengguna terdaftar di sistem</p>
+    </div>
+
+    <div class="action-bar">
+        <a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i> Kembali
+        </a>
+        <span class="rating-count">{{ users|length }} pengguna terdaftar</span>
+    </div>
+
+    {% if users %}
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>No</th>
+                    <th>Username</th>
+                    <th>Nama Lengkap</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Terdaftar</th>
+                    <th>Aksi</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td style="font-weight: 600;">{{ user.username }}</td>
+                    <td>{{ user.nama_lengkap }}</td>
+                    <td style="color: var(--text-secondary);">{{ user.email }}</td>
+                    <td>
+                        <span class="role-badge {{ user.role }}">{{ user.role|upper }}</span>
+                    </td>
+                    <td style="color: var(--text-muted); font-size: 0.8rem;">{{ user.created_at }}</td>
+                    <td>
+                        {% if user.id != current_user.id %}
+                        <form method="POST" action="{{ url_for('admin.delete_user', user_id=user.id) }}" class="swal-delete-form" data-name="{{ user.username }}">
+                            <button type="button" class="btn btn-danger btn-sm" onclick="swalDelete(this)"><i class="bi bi-trash"></i></button>
+                        </form>
+                        {% else %}
+                        <span class="rating-count">Anda</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <i class="bi bi-people"></i>
+        <p>Belum ada pengguna terdaftar</p>
+    </div>
+    {% endif %}
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function swalDelete(btn) {
+    const form = btn.closest('form');
+    const name = form.dataset.name;
+    Swal.fire({
+        title: 'Hapus ' + name + '?',
+        text: 'Pengguna ini akan dihapus secara permanen.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#EF4444',
+        cancelButtonColor: '#64748B',
+        confirmButtonText: 'Ya, Hapus!',
+        cancelButtonText: 'Batal'
+    }).then((result) => {
+        if (result.isConfirmed) form.submit();
+    });
+}
+</script>
+{% endblock %}

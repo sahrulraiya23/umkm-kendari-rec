@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block title %}Beranda | UMKM Kendari{% endblock %}
+
+{% block content %}
+{# Macro untuk Product Card agar konsisten #}
+{% macro render_product_card(produk) %}
+<div class="product-card" style="display: flex; flex-direction: column; height: 100%;">
+    <div class="card-image" style="height: 220px; position: relative;">
+        <a href="{{ url_for('main.detail_produk', produk_id=produk.id) }}" class="product-image-wrapper">
+            <img src="{{ url_for('static', filename='uploads/' + produk.gambar) }}" alt="{{ produk.nama }}"
+                 onerror="let wrapper = this.closest('.product-image-wrapper'); wrapper.querySelector('img').style.display='none'; wrapper.querySelector('.no-photo-placeholder').style.display='flex';"
+                 style="width: 100%; height: 100%; object-fit: cover; display: block;">
+            <div class="no-photo-placeholder" style="display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0;">
+                <i class="bi bi-image"></i>
+                <span>No Photos</span>
+            </div>
+        </a>
+        <div class="rating-badge">
+            <i class="bi bi-star-fill"></i> {{ "{:.1f}".format(produk.avg_rating) }} <span style="color: var(--text-muted); font-weight: 500;">({{ produk.total_rating }})</span>
+        </div>
+    </div>
+    <div class="card-body" style="flex: 1; display: flex; flex-direction: column;">
+        <div class="card-category">
+            {{ produk.kategori_nama or 'Umum' }}
+        </div>
+        <h3 class="card-title" style="min-height: 2.8rem; margin-bottom: auto;">
+            <a href="{{ url_for('main.detail_produk', produk_id=produk.id) }}">{{ produk.nama }}</a>
+        </h3>
+        <div class="card-footer-bar">
+            <div>
+                <div class="card-price-label">Harga</div>
+                <div class="card-price-value">Rp {{ "{:,.0f}".format(produk.harga).replace(',', '.') }}</div>
+            </div>
+            <a href="{{ url_for('main.detail_produk', produk_id=produk.id) }}" class="btn btn-primary btn-sm" style="border-radius: var(--radius-full); padding: 0.4rem 1rem;">
+                Lihat <i class="bi bi-arrow-right"></i>
+            </a>
+        </div>
+    </div>
+</div>
+{% endmacro %}
+
+<!-- Hero Section -->
+{% if page == 1 %}
+<div style="background: linear-gradient(135deg, rgba(37,99,235,0.07) 0%, rgba(8,145,178,0.04) 50%, rgba(245,158,11,0.02) 100%); padding: 4.5rem 1.5rem; border-bottom: 1px solid var(--border-color); text-align: center; margin-bottom: 2rem; position: relative; overflow: hidden;">
+    <!-- Decorative elements -->
+    <div style="position: absolute; top: -80px; right: -80px; width: 300px; height: 300px; border-radius: 50%; background: rgba(37,99,235,0.05); pointer-events: none;"></div>
+    <div style="position: absolute; bottom: -50px; left: -50px; width: 200px; height: 200px; border-radius: 50%; background: rgba(8,145,178,0.04); pointer-events: none;"></div>
+
+    <div class="container" style="max-width: 800px; margin: 0 auto; position: relative; z-index: 1;">
+        <div style="display:inline-flex; align-items:center; gap:0.5rem; background: rgba(37,99,235,0.08); padding:0.4rem 1.2rem; border-radius: var(--radius-full); color:var(--primary); font-size:0.82rem; font-weight:700; margin-bottom:1.5rem; border:1px solid rgba(37,99,235,0.15); animation: float 3s ease-in-out infinite;">
+            <i class="bi bi-stars"></i> Rekomendasi AI Terbaik
+        </div>
+        <h1 style="font-family: 'Plus Jakarta Sans', sans-serif; font-size: 3.2rem; font-weight: 800; letter-spacing: -1.5px; margin-bottom: 1rem; color: var(--text-primary); line-height: 1.15;">
+            Dukung <span style="background: linear-gradient(135deg, var(--primary), var(--secondary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">UMKM Lokal</span><br>Kota Kendari
+        </h1>
+        <p style="font-size: 1.1rem; color: var(--text-secondary); max-width: 600px; margin: 0 auto 2rem auto; line-height: 1.7;">
+            Temukan berbagai produk unggulan, kerajinan, kuliner, dan layanan terbaik dari pelaku usaha kecil dan menengah di Kota Kendari.
+        </p>
+        <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+            <a href="#produk-semua" class="btn btn-primary btn-lg" style="border-radius: var(--radius-full); padding: 0.85rem 2rem;">
+                <i class="bi bi-shop"></i> Mulai Belanja
+            </a>
+            <a href="{{ url_for('main.tentang') }}" class="btn btn-secondary btn-lg" style="border-radius: var(--radius-full); padding: 0.85rem 2rem;">
+                <i class="bi bi-info-circle"></i> Tentang AI Kami
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="container">
+    <!-- Kategori -->
+    {% if kategori_list %}
+    <section class="section" style="padding-top: 1rem;">
+        <div class="section-header">
+            <h2><i class="bi bi-grid-fill" style="color:var(--primary);"></i> Jelajahi Kategori</h2>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); gap: 1rem;">
+            {% for kat in kategori_list %}
+            <a href="{{ url_for('main.list_produk', kategori=kat.id) }}" class="kategori-card" style="text-decoration: none; display: flex; flex-direction: column; align-items: center; gap: 0.6rem; padding: 1.5rem 1rem;">
+                <div class="category-icon-circle">
+                    <i class="{{ kat.icon }}"></i>
+                </div>
+                <span class="kategori-name">{{ kat.nama }}</span>
+            </a>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    <!-- Rekomendasi AI -->
+    <section class="section">
+        <div class="section-header">
+            <h2 style="font-size: 1.6rem;">
+                <i class="bi bi-stars" style="color:var(--accent);"></i> Rekomendasi Khusus Untuk Anda
+            </h2>
+            <span class="badge {% if rekomendasi_method == 'knn' %}badge-knn{% else %}badge-ncf{% endif %}" style="padding: 0.4rem 1rem; font-size: 0.78rem;">
+                <i class="bi bi-cpu"></i>
+                AI: {{ rekomendasi_method|upper }} — {{ rekomendasi_reason }}
+            </span>
+        </div>
+
+        {% if produk_rekomendasi %}
+        <div class="product-grid">
+            {% for produk in produk_rekomendasi %}
+                {{ render_product_card(produk) }}
+            {% endfor %}
+        </div>
+        {% else %}
+        <div style="text-align:center; padding: 4rem 2rem; background: var(--bg-card); border: 2px dashed var(--border-color); border-radius: var(--radius-xl);">
+            <i class="bi bi-box-seam" style="font-size: 2.5rem; color: var(--text-muted); margin-bottom: 1rem; display: block; opacity: 0.4;"></i>
+            <h3 style="color: var(--text-primary); font-size: 1.2rem; margin-bottom: 0.5rem; font-family: 'Plus Jakarta Sans', sans-serif;">Belum ada rekomendasi personal</h3>
+            <p style="color: var(--text-secondary); font-size: 0.92rem;">Jelajahi dan berikan rating pada produk agar AI kami dapat mempelajari preferensi Anda.</p>
+        </div>
+        {% endif %}
+    </section>
+
+    <!-- Trending -->
+    {% if produk_trending %}
+    <section class="section">
+        <div class="section-header">
+            <h2><i class="bi bi-fire" style="color:#ef4444;"></i> Sedang Trending</h2>
+        </div>
+        <div class="product-grid">
+            {% for produk in produk_trending %}
+                {{ render_product_card(produk) }}
+            {% endfor %}
+        </div>
+    </section>
+    <hr class="section-divider">
+    {% endif %}
+</div>
+{% endif %}{# End if page == 1 #}
+
+<div class="container" id="produk-semua">
+    <section class="section" style="padding-top: {% if page > 1 %}3rem{% else %}1rem{% endif %};">
+        <div class="section-header" style="margin-bottom: 2rem;">
+            <h2 style="font-size: 1.6rem;"><i class="bi bi-shop-window" style="color:var(--primary);"></i> Semua Produk UMKM</h2>
+            <div class="count-pill">
+                Menampilkan <strong>{{ produk_paginasi|length }}</strong> dari <strong>{{ total }}</strong> produk
+            </div>
+        </div>
+
+        {% if produk_paginasi %}
+        <div class="product-grid">
+            {% for produk in produk_paginasi %}
+                {{ render_product_card(produk) }}
+            {% endfor %}
+        </div>
+
+        <!-- Pagination -->
+        {% if total_pages > 1 %}
+        <div class="pagination-wrapper">
+            {% if page > 1 %}
+            <a href="?page={{ page - 1 }}#produk-semua" class="page-btn page-btn-nav">
+                <i class="bi bi-chevron-left"></i> Prev
+            </a>
+            {% else %}
+            <span class="page-btn page-btn-nav disabled"><i class="bi bi-chevron-left"></i> Prev</span>
+            {% endif %}
+
+            <div class="page-numbers">
+                {% for p in range(1, total_pages + 1) %}
+                    {% if p == page %}
+                    <span class="page-btn active">{{ p }}</span>
+                    {% elif p <= 2 or p > total_pages - 2 or (p >= page - 2 and p <= page + 2) %}
+                    <a href="?page={{ p }}#produk-semua" class="page-btn">{{ p }}</a>
+                    {% elif p == 3 or p == total_pages - 2 %}
+                    <span class="page-ellipsis">…</span>
+                    {% endif %}
+                {% endfor %}
+            </div>
+
+            {% if page < total_pages %}
+            <a href="?page={{ page + 1 }}#produk-semua" class="page-btn page-btn-nav">
+                Next <i class="bi bi-chevron-right"></i>
+            </a>
+            {% else %}
+            <span class="page-btn page-btn-nav disabled">Next <i class="bi bi-chevron-right"></i></span>
+            {% endif %}
+        </div>
+        {% endif %}
+
+
+        {% else %}
+        <div style="text-align:center; padding: 4rem 2rem;">
+            <i class="bi bi-inbox" style="font-size: 3rem; color: var(--text-muted); margin-bottom: 1rem; display: block; opacity: 0.3;"></i>
+            <h3 style="color: var(--text-primary); margin-bottom: 0.5rem;">Tidak ada produk tersedia</h3>
+        </div>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

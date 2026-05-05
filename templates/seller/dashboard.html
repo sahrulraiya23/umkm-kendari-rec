@@ -1,0 +1,1238 @@
+{% extends "base.html" %}
+{% block title %}Analytics Dashboard | {{ current_user.nama_lengkap }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid" style="padding: 1.5rem; max-width: 1400px; margin: 0 auto;">
+
+    <!-- Professional Header -->
+    <div class="dashboard-header">
+        <div class="header-content">
+            <div class="header-info">
+                <div class="avatar-large">
+                    <i class="bi bi-shop-window"></i>
+                </div>
+                <div>
+                    <h1>Analytics Dashboard</h1>
+                    <p>Selamat datang kembali, <strong>{{ current_user.nama_lengkap }}</strong></p>
+                    <div class="header-meta">
+                        <span class="meta-item">
+                            <i class="bi bi-calendar"></i>
+                            {{ "now"|strftime("%A, %d %B %Y") }}
+                        </span>
+                        <span class="meta-item">
+                            <i class="bi bi-clock"></i>
+                            {{ "now"|strftime("%H:%M") }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <div class="header-actions">
+                <a href="{{ url_for('seller.tambah_produk') }}" class="btn btn-primary btn-lg">
+                    <i class="bi bi-plus-lg"></i>
+                    <span>Tambah Produk</span>
+                </a>
+                <a href="{{ url_for('main.index') }}" class="btn btn-outline-primary btn-lg">
+                    <i class="bi bi-eye"></i>
+                    <span>Lihat Toko</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Key Metrics Row -->
+    <div class="metrics-grid">
+        <div class="metric-card primary">
+            <div class="metric-icon">
+                <i class="bi bi-box-seam"></i>
+            </div>
+            <div class="metric-content">
+                <div class="metric-value">{{ stats.total_produk }}</div>
+                <div class="metric-label">Total Produk</div>
+                <div class="metric-trend">
+                    <i class="bi bi-arrow-up-circle-fill"></i>
+                    <span>Aktif</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="metric-card success">
+            <div class="metric-icon">
+                <i class="bi bi-star-fill"></i>
+            </div>
+            <div class="metric-content">
+                <div class="metric-value">{{ stats.avg_rating }}</div>
+                <div class="metric-label">Rata-rata Rating</div>
+                <div class="metric-trend">
+                    <i class="bi bi-trophy-fill"></i>
+                    <span>Excellent</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="metric-card info">
+            <div class="metric-icon">
+                <i class="bi bi-people-fill"></i>
+            </div>
+            <div class="metric-content">
+                <div class="metric-value">{{ stats.unique_customers }}</div>
+                <div class="metric-label">Pelanggan Unik</div>
+                <div class="metric-trend">
+                    <i class="bi bi-person-plus-fill"></i>
+                    <span>Aktif</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="metric-card warning">
+            <div class="metric-icon">
+                <i class="bi bi-chat-quote-fill"></i>
+            </div>
+            <div class="metric-content">
+                <div class="metric-value">{{ stats.total_ratings }}</div>
+                <div class="metric-label">Total Ulasan</div>
+                <div class="metric-trend">
+                    <i class="bi bi-chat-dots-fill"></i>
+                    <span>{{ stats.positive_ratings }} positif</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alerts Section -->
+    {% if stats.low_stock_count > 0 or stats.out_of_stock_count > 0 %}
+    <div class="alerts-section">
+        {% if stats.low_stock_count > 0 %}
+        <div class="alert alert-warning">
+            <div class="alert-icon">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+            </div>
+            <div class="alert-content">
+                <h4>Stok Rendah</h4>
+                <p>{{ stats.low_stock_count }} produk memiliki stok ≤ 5. Segera restock untuk menghindari kehabisan.</p>
+                <div class="alert-products">
+                    {% for produk in low_stock_products[:3] %}
+                    <span class="product-tag">{{ produk.nama }} ({{ produk.stok }})</span>
+                    {% endfor %}
+                    {% if stats.low_stock_count > 3 %}
+                    <span class="product-tag">+{{ stats.low_stock_count - 3 }} lainnya</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if stats.out_of_stock_count > 0 %}
+        <div class="alert alert-danger">
+            <div class="alert-icon">
+                <i class="bi bi-x-circle-fill"></i>
+            </div>
+            <div class="alert-content">
+                <h4>Stok Habis</h4>
+                <p>{{ stats.out_of_stock_count }} produk sudah habis stok. Produk ini tidak dapat dipesan pelanggan.</p>
+                <div class="alert-products">
+                    {% for produk in out_of_stock_products[:3] %}
+                    <span class="product-tag">{{ produk.nama }}</span>
+                    {% endfor %}
+                    {% if stats.out_of_stock_count > 3 %}
+                    <span class="product-tag">+{{ stats.out_of_stock_count - 3 }} lainnya</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Main Content Grid -->
+    <div class="content-grid">
+
+        <!-- Performance Chart -->
+        <div class="chart-card">
+            <div class="card-header">
+                <h3><i class="bi bi-graph-up"></i> Tren Kinerja Bulanan</h3>
+                <div class="chart-controls">
+                    <select id="chart-period" class="form-select form-select-sm">
+                        <option value="6">6 Bulan</option>
+                        <option value="12">12 Bulan</option>
+                    </select>
+                </div>
+            </div>
+            <div class="card-body">
+                <canvas id="performanceChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+
+        <!-- Top Products -->
+        <div class="top-products-card">
+            <div class="card-header">
+                <h3><i class="bi bi-trophy"></i> Produk Terpopuler</h3>
+                <div class="card-subtitle">Berdasarkan rating</div>
+            </div>
+            <div class="card-body">
+                {% if top_products %}
+                <div class="products-list">
+                    {% for produk in top_products %}
+                    <div class="product-item">
+                        <div class="product-rank">{{ loop.index }}</div>
+                        <div class="product-image">
+                            <img src="{{ url_for('static', filename='uploads/' + produk['gambar']) }}"
+                                 alt="{{ produk['nama'] }}"
+                                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
+                            <div class="no-photo-placeholder" style="display: none; width: 60px; height: 60px;">
+                                <i class="bi bi-image" style="font-size: 1.5rem;"></i>
+                            </div>
+                        </div>
+                        <div class="product-info">
+                            <h4>{{ produk['nama'] }}</h4>
+                            <div class="product-stats">
+                                <span class="stat">
+                                    <i class="bi bi-star-fill"></i>
+                                    {{ "%.1f"|format(produk['avg_rating']) }}
+                                </span>
+                                <span class="stat">
+                                    <i class="bi bi-chat-quote"></i>
+                                    {{ produk['total_ratings'] }}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="product-price">
+                            Rp {{ "{:,.0f}".format(produk['harga']) }}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state">
+                    <i class="bi bi-bar-chart"></i>
+                    <p>Belum ada data performa produk</p>
+                    <small>Tambah produk dan dapatkan rating untuk melihat analytics</small>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Recent Reviews -->
+        <div class="reviews-card">
+            <div class="card-header">
+                <h3><i class="bi bi-chat-quote"></i> Ulasan Terbaru</h3>
+                <a href="#" class="btn btn-link btn-sm">Lihat Semua</a>
+            </div>
+            <div class="card-body">
+                {% if recent_ratings %}
+                <div class="reviews-list">
+                    {% for rating in recent_ratings %}
+                    <div class="review-item">
+                        <div class="review-header">
+                            <div class="reviewer-info">
+                                <div class="reviewer-avatar">
+                                    {{ rating['customer_nama'][0]|upper }}
+                                </div>
+                                <div>
+                                    <div class="reviewer-name">{{ rating['customer_nama'] }}</div>
+                                    <div class="review-date">{{ rating['created_at']|strftime('%d %b %Y') }}</div>
+                                </div>
+                            </div>
+                            <div class="review-rating">
+                                {% for i in range(5) %}
+                                    {% if i < rating['score'] %}
+                                        <i class="bi bi-star-fill"></i>
+                                    {% else %}
+                                        <i class="bi bi-star"></i>
+                                    {% endif %}
+                                {% endfor %}
+                            </div>
+                        </div>
+                        <div class="review-product">
+                            <strong>{{ rating['produk_nama'] }}</strong>
+                        </div>
+                        {% if rating['review'] %}
+                        <div class="review-text">
+                            "{{ rating['review'] }}"
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state">
+                    <i class="bi bi-chat-quote"></i>
+                    <p>Belum ada ulasan</p>
+                    <small>Ulasan akan muncul setelah pelanggan memberikan rating</small>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="actions-card">
+            <div class="card-header">
+                <h3><i class="bi bi-lightning"></i> Aksi Cepat</h3>
+            </div>
+            <div class="card-body">
+                <div class="actions-grid">
+                    <a href="{{ url_for('seller.tambah_produk') }}" class="action-btn">
+                        <div class="action-icon">
+                            <i class="bi bi-plus-circle-fill"></i>
+                        </div>
+                        <div class="action-content">
+                            <h4>Tambah Produk</h4>
+                            <p>Jual produk baru</p>
+                        </div>
+                    </a>
+
+                    <a href="#products" class="action-btn">
+                        <div class="action-icon">
+                            <i class="bi bi-list-ul"></i>
+                        </div>
+                        <div class="action-content">
+                            <h4>Kelola Produk</h4>
+                            <p>Edit & hapus produk</p>
+                        </div>
+                    </a>
+
+                    <a href="{{ url_for('main.index') }}" class="action-btn">
+                        <div class="action-icon">
+                            <i class="bi bi-shop"></i>
+                        </div>
+                        <div class="action-content">
+                            <h4>Lihat Toko</h4>
+                            <p>Preview toko online</p>
+                        </div>
+                    </a>
+
+                    <a href="#" class="action-btn">
+                        <div class="action-icon">
+                            <i class="bi bi-graph-up"></i>
+                        </div>
+                        <div class="action-content">
+                            <h4>Analytics</h4>
+                            <p>Laporan detail</p>
+                        </div>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Products Management Section -->
+    <div id="products" class="products-section">
+        <div class="section-header">
+            <h2><i class="bi bi-boxes"></i> Kelola Produk</h2>
+            <div class="section-actions">
+                <div class="search-box">
+                    <i class="bi bi-search"></i>
+                    <input type="text" placeholder="Cari produk..." id="product-search">
+                </div>
+                <a href="{{ url_for('seller.tambah_produk') }}" class="btn btn-primary">
+                    <i class="bi bi-plus-lg"></i>
+                    Tambah Produk
+                </a>
+            </div>
+        </div>
+
+        {% if produk_list %}
+        <div class="products-table-container">
+            <table class="products-table">
+                <thead>
+                    <tr>
+                        <th>Produk</th>
+                        <th>Kategori</th>
+                        <th>Harga</th>
+                        <th>Stok</th>
+                        <th>Rating</th>
+                        <th>Status</th>
+                        <th>Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for produk in produk_list %}
+                    <tr>
+                        <td>
+                            <div class="product-cell">
+                                <img src="{{ url_for('static', filename='uploads/' + produk.gambar) }}"
+                                     alt="{{ produk.nama }}"
+                                     class="product-thumb"
+                                     onerror="this.style.display='none'; this.nextElementSibling.querySelector('.no-photo-thumb').style.display='flex'">
+                                <div>
+                                    <div class="no-photo-thumb" style="display: none; width: 50px; height: 50px; align-items: center; justify-content: center; background: var(--bg-secondary); border-radius: 4px;">
+                                        <i class="bi bi-image" style="font-size: 1.2rem; color: var(--text-muted);"></i>
+                                    </div>
+                                    <div class="product-name">{{ produk.nama }}</div>
+                                    <div class="product-id">ID: {{ produk.id }}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="category-badge">{{ produk.kategori_nama or 'Umum' }}</span>
+                        </td>
+                        <td class="price-cell">
+                            Rp {{ "{:,.0f}".format(produk.harga) }}
+                        </td>
+                        <td>
+                            <span class="stock-badge {% if produk.stok < 5 %}low{% elif produk.stok == 0 %}empty{% endif %}">
+                                {{ produk.stok }}
+                            </span>
+                        </td>
+                        <td>
+                            <div class="rating-cell">
+                                <div class="stars">
+                                    {% for i in range(5) %}
+                                        {% if i < produk.avg_rating|round|int %}
+                                            <i class="bi bi-star-fill"></i>
+                                        {% else %}
+                                            <i class="bi bi-star"></i>
+                                        {% endif %}
+                                    {% endfor %}
+                                </div>
+                                <div class="rating-text">
+                                    {{ "%.1f"|format(produk.avg_rating) }} ({{ produk.total_rating }})
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="status-badge {% if produk.tersedia %}active{% else %}inactive{% endif %}">
+                                {% if produk.tersedia %}Aktif{% else %}Tidak Aktif{% endif %}
+                            </span>
+                        </td>
+                        <td>
+                            <div class="action-buttons">
+                                <a href="{{ url_for('main.detail_produk', produk_id=produk.id) }}"
+                                   class="btn btn-sm btn-outline-primary" title="Lihat">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                                <a href="{{ url_for('seller.edit_produk', produk_id=produk.id) }}"
+                                   class="btn btn-sm btn-outline-secondary" title="Edit">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                                <form method="POST" action="{{ url_for('seller.hapus_produk', produk_id=produk.id) }}" class="swal-delete-form" data-name="{{ produk.nama }}" style="display: inline;">
+                                    <button type="button" class="btn btn-sm btn-outline-danger" title="Hapus" onclick="swalDelete(this)">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-products">
+            <div class="empty-icon">
+                <i class="bi bi-box-seam"></i>
+            </div>
+            <h3>Belum ada produk</h3>
+            <p>Mulai jualan dengan menambah produk pertama Anda</p>
+            <a href="{{ url_for('seller.tambah_produk') }}" class="btn btn-primary btn-lg">
+                <i class="bi bi-plus-lg"></i>
+                Tambah Produk Pertama
+            </a>
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+
+<!-- Chart.js for analytics -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+// Performance Chart
+const monthlyData = {{ monthly_data|tojson }};
+const ctx = document.getElementById('performanceChart').getContext('2d');
+
+new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: monthlyData.map(d => d.month),
+        datasets: [{
+            label: 'Rating Count',
+            data: monthlyData.map(d => d.ratings),
+            borderColor: '#1a56db',
+            backgroundColor: 'rgba(26, 86, 219, 0.1)',
+            tension: 0.4,
+            yAxisID: 'y'
+        }, {
+            label: 'Average Rating',
+            data: monthlyData.map(d => d.avg_rating),
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            tension: 0.4,
+            yAxisID: 'y1'
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+            mode: 'index',
+            intersect: false,
+        },
+        plugins: {
+            legend: {
+                display: true,
+                position: 'top'
+            }
+        },
+        scales: {
+            y: {
+                type: 'linear',
+                display: true,
+                position: 'left',
+                title: {
+                    display: true,
+                    text: 'Rating Count'
+                }
+            },
+            y1: {
+                type: 'linear',
+                display: true,
+                position: 'right',
+                title: {
+                    display: true,
+                    text: 'Average Rating'
+                },
+                grid: {
+                    drawOnChartArea: false,
+                },
+            }
+        }
+    }
+});
+
+// Product search functionality
+document.getElementById('product-search').addEventListener('input', function(e) {
+    const searchTerm = e.target.value.toLowerCase();
+    const rows = document.querySelectorAll('.products-table tbody tr');
+
+    rows.forEach(row => {
+        const productName = row.querySelector('.product-name').textContent.toLowerCase();
+        const visible = productName.includes(searchTerm);
+        row.style.display = visible ? '' : 'none';
+    });
+});
+</script>
+
+<style>
+/* Professional Dashboard Styles */
+:root {
+    --primary: #1a56db;
+    --primary-light: #3b82f6;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --info: #06b6d4;
+    --gray-50: #f9fafb;
+    --gray-100: #f3f4f6;
+    --gray-200: #e5e7eb;
+    --gray-300: #d1d5db;
+    --gray-400: #9ca3af;
+    --gray-500: #6b7280;
+    --gray-600: #4b5563;
+    --gray-700: #374151;
+    --gray-800: #1f2937;
+    --gray-900: #111827;
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    --radius: 8px;
+    --radius-lg: 12px;
+}
+
+.dashboard-header {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+    border-radius: var(--radius-lg);
+    padding: 2rem;
+    margin-bottom: 2rem;
+    color: white;
+    box-shadow: var(--shadow-lg);
+}
+
+.header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 2rem;
+}
+
+.header-info {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.avatar-large {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    backdrop-filter: blur(10px);
+}
+
+.header-info h1 {
+    margin: 0 0 0.5rem 0;
+    font-size: 2rem;
+    font-weight: 700;
+}
+
+.header-info p {
+    margin: 0;
+    opacity: 0.9;
+    font-size: 1.1rem;
+}
+
+.header-meta {
+    display: flex;
+    gap: 1rem;
+    margin-top: 0.5rem;
+}
+
+.meta-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    opacity: 0.8;
+}
+
+.header-actions {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.metric-card {
+    background: white;
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--gray-200);
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.metric-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+.metric-card.primary { border-left: 4px solid var(--primary); }
+.metric-card.success { border-left: 4px solid var(--success); }
+.metric-card.info { border-left: 4px solid var(--info); }
+.metric-card.warning { border-left: 4px solid var(--warning); }
+
+.metric-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: var(--radius);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+}
+
+.metric-card.primary .metric-icon { background: rgba(26, 86, 219, 0.1); color: var(--primary); }
+.metric-card.success .metric-icon { background: rgba(16, 185, 129, 0.1); color: var(--success); }
+.metric-card.info .metric-icon { background: rgba(6, 182, 212, 0.1); color: var(--info); }
+.metric-card.warning .metric-icon { background: rgba(245, 158, 11, 0.1); color: var(--warning); }
+
+.metric-content {
+    flex: 1;
+}
+
+.metric-value {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+
+.metric-label {
+    font-size: 0.9rem;
+    color: var(--gray-600);
+    margin-bottom: 0.5rem;
+}
+
+.metric-trend {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.metric-card.primary .metric-trend { color: var(--primary); }
+.metric-card.success .metric-trend { color: var(--success); }
+.metric-card.info .metric-trend { color: var(--info); }
+.metric-card.warning .metric-trend { color: var(--warning); }
+
+.alerts-section {
+    margin-bottom: 2rem;
+}
+
+.alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1.5rem;
+    border-radius: var(--radius-lg);
+    margin-bottom: 1rem;
+    border: 1px solid;
+}
+
+.alert-warning {
+    background: rgba(245, 158, 11, 0.05);
+    border-color: var(--warning);
+    color: var(--gray-800);
+}
+
+.alert-danger {
+    background: rgba(239, 68, 68, 0.05);
+    border-color: var(--danger);
+    color: var(--gray-800);
+}
+
+.alert-icon {
+    font-size: 1.5rem;
+    margin-top: 0.25rem;
+}
+
+.alert h4 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.alert p {
+    margin: 0 0 1rem 0;
+    color: var(--gray-600);
+}
+
+.alert-products {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.product-tag {
+    background: var(--gray-100);
+    padding: 0.25rem 0.75rem;
+    border-radius: 50px;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.content-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 3rem;
+}
+
+.chart-card, .top-products-card, .reviews-card, .actions-card {
+    background: white;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--gray-200);
+    overflow: hidden;
+}
+
+.card-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--gray-200);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.card-header h3 {
+    margin: 0;
+    font-size: 1.2rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.card-subtitle {
+    font-size: 0.9rem;
+    color: var(--gray-500);
+    margin-top: 0.25rem;
+}
+
+.card-body {
+    padding: 1.5rem;
+}
+
+.products-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.product-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    border-radius: var(--radius);
+    background: var(--gray-50);
+    transition: background 0.2s ease;
+}
+
+.product-item:hover {
+    background: var(--gray-100);
+}
+
+.product-rank {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.9rem;
+}
+
+.product-image img {
+    width: 60px;
+    height: 60px;
+    border-radius: var(--radius);
+    object-fit: cover;
+}
+
+.product-info {
+    flex: 1;
+}
+
+.product-info h4 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.product-stats {
+    display: flex;
+    gap: 1rem;
+}
+
+.stat {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.8rem;
+    color: var(--gray-600);
+}
+
+.product-price {
+    font-weight: 700;
+    color: var(--primary);
+}
+
+.reviews-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.review-item {
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--gray-200);
+}
+
+.review-item:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.review-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.75rem;
+}
+
+.reviewer-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.reviewer-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+}
+
+.reviewer-name {
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+.review-date {
+    font-size: 0.8rem;
+    color: var(--gray-500);
+}
+
+.review-rating {
+    color: var(--warning);
+}
+
+.review-product {
+    margin-bottom: 0.5rem;
+    color: var(--gray-700);
+}
+
+.review-text {
+    font-style: italic;
+    color: var(--gray-600);
+    background: var(--gray-50);
+    padding: 0.75rem;
+    border-radius: var(--radius);
+    border-left: 3px solid var(--primary);
+}
+
+.actions-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.action-btn {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.5rem;
+    border-radius: var(--radius);
+    background: var(--gray-50);
+    text-decoration: none;
+    color: var(--gray-700);
+    transition: all 0.2s ease;
+}
+
+.action-btn:hover {
+    background: var(--primary);
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: var(--shadow);
+}
+
+.action-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: var(--radius);
+    background: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    color: var(--primary);
+}
+
+.action-btn:hover .action-icon {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+.action-content h4 {
+    margin: 0 0 0.25rem 0;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.action-content p {
+    margin: 0;
+    font-size: 0.9rem;
+    opacity: 0.8;
+}
+
+.products-section {
+    background: white;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--gray-200);
+    overflow: hidden;
+}
+
+.section-header {
+    padding: 2rem;
+    border-bottom: 1px solid var(--gray-200);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.section-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.section-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.search-box {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.search-box i {
+    position: absolute;
+    left: 0.75rem;
+    color: var(--gray-400);
+}
+
+.search-box input {
+    padding: 0.5rem 0.75rem 0.5rem 2.5rem;
+    border: 1px solid var(--gray-300);
+    border-radius: var(--radius);
+    background: var(--gray-50);
+    font-size: 0.9rem;
+    width: 250px;
+}
+
+.products-table-container {
+    overflow-x: auto;
+}
+
+.products-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.products-table th {
+    background: var(--gray-50);
+    padding: 1rem;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--gray-700);
+    border-bottom: 1px solid var(--gray-200);
+}
+
+.products-table td {
+    padding: 1rem;
+    border-bottom: 1px solid var(--gray-200);
+    vertical-align: middle;
+}
+
+.product-cell {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.product-thumb {
+    width: 50px;
+    height: 50px;
+    border-radius: var(--radius);
+    object-fit: cover;
+}
+
+.product-name {
+    font-weight: 600;
+    color: var(--gray-900);
+}
+
+.product-id {
+    font-size: 0.8rem;
+    color: var(--gray-500);
+}
+
+.category-badge {
+    background: var(--primary);
+    color: white;
+    padding: 0.25rem 0.75rem;
+    border-radius: 50px;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.price-cell {
+    font-weight: 700;
+    color: var(--primary);
+}
+
+.stock-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 50px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.stock-badge:not(.low):not(.empty) {
+    background: var(--success);
+    color: white;
+}
+
+.stock-badge.low {
+    background: var(--warning);
+    color: white;
+}
+
+.stock-badge.empty {
+    background: var(--danger);
+    color: white;
+}
+
+.rating-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.stars {
+    color: var(--warning);
+}
+
+.rating-text {
+    font-size: 0.8rem;
+    color: var(--gray-500);
+}
+
+.status-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 50px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.status-badge.active {
+    background: var(--success);
+    color: white;
+}
+
+.status-badge.inactive {
+    background: var(--gray-300);
+    color: var(--gray-700);
+}
+
+.action-buttons {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.empty-products {
+    text-align: center;
+    padding: 4rem 2rem;
+}
+
+.empty-icon {
+    font-size: 4rem;
+    color: var(--gray-300);
+    margin-bottom: 1rem;
+}
+
+.empty-products h3 {
+    margin: 0 0 0.5rem 0;
+    color: var(--gray-700);
+}
+
+.empty-products p {
+    margin: 0 0 2rem 0;
+    color: var(--gray-500);
+}
+
+.empty-state {
+    text-align: center;
+    padding: 2rem;
+    color: var(--gray-500);
+}
+
+.empty-state i {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+    display: block;
+}
+
+@media (max-width: 768px) {
+    .header-content {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .metrics-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .content-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .section-header {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .products-table {
+        font-size: 0.8rem;
+    }
+
+    .products-table th,
+    .products-table td {
+        padding: 0.5rem;
+    }
+
+    .action-buttons {
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+}
+</style>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function swalDelete(btn) {
+    const form = btn.closest('form');
+    const name = form.dataset.name;
+    Swal.fire({
+        title: 'Hapus produk ' + name + '?',
+        text: 'Produk ini akan dihapus secara permanen.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#EF4444',
+        cancelButtonColor: '#64748B',
+        confirmButtonText: 'Ya, Hapus!',
+        cancelButtonText: 'Batal'
+    }).then((result) => {
+        if (result.isConfirmed) form.submit();
+    });
+}
+</script>
+{% endblock %}
+

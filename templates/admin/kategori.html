@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Kelola Kategori{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="dashboard-header">
+        <h1><i class="bi bi-tags"></i> Kelola Kategori</h1>
+        <p>Tambah, edit, atau hapus kategori produk UMKM</p>
+    </div>
+
+    <div class="action-bar">
+        <a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i> Kembali
+        </a>
+        <button class="btn btn-primary btn-sm" onclick="document.getElementById('addModal').classList.add('active')">
+            <i class="bi bi-plus-lg"></i> Tambah Kategori
+        </button>
+    </div>
+
+    <!-- Tabel Kategori -->
+    {% if kategori_list %}
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>No</th>
+                    <th>Icon</th>
+                    <th>Nama Kategori</th>
+                    <th>Deskripsi</th>
+                    <th>Aksi</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for kat in kategori_list %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td><i class="{{ kat.icon }}" style="font-size: 1.2rem; color: var(--primary-light);"></i></td>
+                    <td style="font-weight: 600;">{{ kat.nama }}</td>
+                    <td style="color: var(--text-secondary);">{{ kat.deskripsi or '-' }}</td>
+                    <td>
+                        <div class="d-flex gap-1">
+                            <button class="btn btn-secondary btn-sm"
+                                    onclick="openEdit({{ kat.id }}, '{{ kat.nama }}', '{{ kat.deskripsi }}', '{{ kat.icon }}')">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <form method="POST" style="display: inline;" class="swal-delete-form" data-name="{{ kat.nama }}">
+                                <input type="hidden" name="action" value="delete">
+                                <input type="hidden" name="kategori_id" value="{{ kat.id }}">
+                                <button type="button" class="btn btn-danger btn-sm" onclick="swalDelete(this)"><i class="bi bi-trash"></i></button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <i class="bi bi-tags"></i>
+        <p>Belum ada kategori</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Modal Tambah -->
+<div class="modal-backdrop" id="addModal">
+    <div class="modal-content">
+        <h3><i class="bi bi-plus-lg"></i> Tambah Kategori</h3>
+        <form method="POST">
+            <input type="hidden" name="action" value="add">
+            <div class="form-group">
+                <label>Nama Kategori *</label>
+                <input type="text" name="nama" class="form-control" placeholder="Nama kategori" required>
+            </div>
+            <div class="form-group">
+                <label>Deskripsi</label>
+                <textarea name="deskripsi" class="form-control" rows="2" placeholder="Deskripsi kategori"></textarea>
+            </div>
+            <div class="form-group">
+                <label>Icon (Bootstrap Icons class)</label>
+                <input type="text" name="icon" class="form-control" value="bi-tag" placeholder="bi-tag">
+            </div>
+            <div class="d-flex gap-1" style="justify-content: flex-end;">
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('addModal').classList.remove('active')">Batal</button>
+                <button type="submit" class="btn btn-primary"><i class="bi bi-check"></i> Simpan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Edit -->
+<div class="modal-backdrop" id="editModal">
+    <div class="modal-content">
+        <h3><i class="bi bi-pencil"></i> Edit Kategori</h3>
+        <form method="POST">
+            <input type="hidden" name="action" value="edit">
+            <input type="hidden" name="kategori_id" id="editId">
+            <div class="form-group">
+                <label>Nama Kategori *</label>
+                <input type="text" name="nama" id="editNama" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label>Deskripsi</label>
+                <textarea name="deskripsi" id="editDeskripsi" class="form-control" rows="2"></textarea>
+            </div>
+            <div class="form-group">
+                <label>Icon</label>
+                <input type="text" name="icon" id="editIcon" class="form-control">
+            </div>
+            <div class="d-flex gap-1" style="justify-content: flex-end;">
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('editModal').classList.remove('active')">Batal</button>
+                <button type="submit" class="btn btn-primary"><i class="bi bi-check"></i> Update</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function openEdit(id, nama, deskripsi, icon) {
+    document.getElementById('editId').value = id;
+    document.getElementById('editNama').value = nama;
+    document.getElementById('editDeskripsi').value = deskripsi;
+    document.getElementById('editIcon').value = icon;
+    document.getElementById('editModal').classList.add('active');
+}
+
+function swalDelete(btn) {
+    const form = btn.closest('form');
+    const name = form.dataset.name;
+    Swal.fire({
+        title: 'Hapus kategori ' + name + '?',
+        text: 'Kategori ini akan dihapus secara permanen.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#EF4444',
+        cancelButtonColor: '#64748B',
+        confirmButtonText: 'Ya, Hapus!',
+        cancelButtonText: 'Batal'
+    }).then((result) => {
+        if (result.isConfirmed) form.submit();
+    });
+}
+</script>
+{% endblock %}

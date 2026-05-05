@@ -1,0 +1,517 @@
+{% extends "base.html" %}
+{% block title %}Evaluasi Model KNN & NCF{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="dashboard-header">
+        <div class="d-flex align-center justify-between flex-wrap gap-2">
+            <div>
+                <h1><i class="bi bi-graph-up-arrow"></i> Evaluasi Model Rekomendasi</h1>
+                <p>Perbandingan performa algoritma <strong>KNN</strong> vs <strong>NCF</strong> secara komprehensif</p>
+            </div>
+            <div class="d-flex gap-1">
+                <a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary btn-sm">
+                    <i class="bi bi-arrow-left"></i> Dashboard
+                </a>
+                <a href="{{ url_for('admin.train_model') }}" class="btn btn-primary btn-sm">
+                    <i class="bi bi-cpu"></i> Training NCF
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Overview -->
+    <div class="stats-grid mb-3" style="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));">
+        <div class="stat-card">
+            <div class="stat-number">{{ total_ratings }}</div>
+            <div class="stat-label"><i class="bi bi-star"></i> Total Rating</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ total_users }}</div>
+            <div class="stat-label"><i class="bi bi-people"></i> User Aktif</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number" style="font-size: 1.4rem;">{{ "%.1f"|format(knn_eval.precision_at_10 * 100) }}%</div>
+            <div class="stat-label"><i class="bi bi-bullseye"></i> KNN Precision@10</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number" style="font-size: 1.4rem; background: linear-gradient(135deg,var(--secondary),#0369A1); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;">
+                {% if ncf_eval %}{{ "%.1f"|format(ncf_eval.precision_at_10 * 100) }}%{% else %}N/A{% endif %}
+            </div>
+            <div class="stat-label"><i class="bi bi-cpu"></i> NCF Precision@10</div>
+        </div>
+    </div>
+
+    <!-- Loading indicator -->
+    <div id="chartLoading" style="text-align:center; padding: 3rem; color: var(--text-muted);">
+        <i class="bi bi-hourglass-split" style="font-size: 2rem; display:block; margin-bottom:1rem; animation: spin 1.5s linear infinite;"></i>
+        Menghitung evaluasi metrik...
+    </div>
+
+    <!-- Charts Grid (hidden until loaded) -->
+    <div id="chartsSection" style="display:none;">
+
+        <!-- Chart Row 1: Precision vs Recall Bar -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+            <div class="glass-card">
+                <h3 class="chart-title"><i class="bi bi-bar-chart-fill" style="color:var(--primary);"></i> Precision@K Comparison</h3>
+                <p class="chart-subtitle">Proporsi item relevan dalam Top-K rekomendasi</p>
+                <canvas id="chartPrecision" height="220"></canvas>
+            </div>
+            <div class="glass-card">
+                <h3 class="chart-title"><i class="bi bi-arrow-repeat" style="color:var(--secondary);"></i> Recall@K Comparison</h3>
+                <p class="chart-subtitle">Cakupan item relevan yang berhasil ditemukan</p>
+                <canvas id="chartRecall" height="220"></canvas>
+            </div>
+        </div>
+
+        <!-- Chart Row 2: F1 Score and Radar -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+            <div class="glass-card">
+                <h3 class="chart-title"><i class="bi bi-lightning-fill" style="color:var(--accent);"></i> F1-Score@K Comparison</h3>
+                <p class="chart-subtitle">Harmonic mean antara Precision dan Recall</p>
+                <canvas id="chartF1" height="220"></canvas>
+            </div>
+            <div class="glass-card">
+                <h3 class="chart-title"><i class="bi bi-hexagon" style="color:var(--success);"></i> Radar Perbandingan Komprehensif</h3>
+                <p class="chart-subtitle">Perbandingan multi-dimensi KNN vs NCF</p>
+                <canvas id="chartRadar" height="220"></canvas>
+            </div>
+        </div>
+
+        <!-- Chart Row 3: MAE / RMSE -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+            <div class="glass-card">
+                <h3 class="chart-title"><i class="bi bi-activity" style="color:var(--danger);"></i> MAE & RMSE (Error Prediksi)</h3>
+                <p class="chart-subtitle">Lebih kecil = lebih baik</p>
+                <canvas id="chartError" height="220"></canvas>
+            </div>
+            <div class="glass-card">
+                <h3 class="chart-title"><i class="bi bi-speedometer" style="color:var(--primary-dark);"></i> Skor Keseluruhan</h3>
+                <p class="chart-subtitle">Rata-rata semua metrik Precision + Recall + F1</p>
+                <canvas id="chartOverall" height="220"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Metrics Table -->
+    <div class="glass-card mb-3">
+        <h2 style="margin-bottom: 1.2rem; font-size: 1.2rem;">
+            <i class="bi bi-table" style="color: var(--primary);"></i> Tabel Metrik Lengkap
+        </h2>
+
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Metrik</th>
+                        <th style="text-align:center;">
+                            <span class="badge" style="background: linear-gradient(135deg,var(--primary),var(--primary-dark)); padding:0.3rem 0.7rem; color:white; border-radius: 50px; font-size:0.8rem;">KNN</span>
+                        </th>
+                        <th style="text-align:center;">
+                            <span class="badge" style="background: linear-gradient(135deg,var(--secondary),#0369A1); padding:0.3rem 0.7rem; color:white; border-radius: 50px; font-size:0.8rem;">NCF</span>
+                        </th>
+                        <th style="text-align:center;">Pemenang</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% set ncf = ncf_eval or {} %}
+
+                    {% macro winner(knn_val, ncf_val, higher_is_better=true) %}
+                        {% if ncf_eval %}
+                            {% if higher_is_better %}
+                                {% if knn_val > ncf_val %}<span class="win-badge knn">KNN</span>
+                                {% elif ncf_val > knn_val %}<span class="win-badge ncf">NCF</span>
+                                {% else %}<span class="win-badge tie">Seri</span>{% endif %}
+                            {% else %}
+                                {% if knn_val < ncf_val %}<span class="win-badge knn">KNN</span>
+                                {% elif ncf_val < knn_val %}<span class="win-badge ncf">NCF</span>
+                                {% else %}<span class="win-badge tie">Seri</span>{% endif %}
+                            {% endif %}
+                        {% else %}<span class="win-badge knn">KNN</span>{% endif %}
+                    {% endmacro %}
+
+                    <tr>
+                        <td class="metric-name">Precision@5</td>
+                        <td class="metric-val knn-val">{{ "%.2f"|format(knn_eval.precision_at_5 * 100) }}%</td>
+                        <td class="metric-val ncf-val">{% if ncf_eval %}{{ "%.2f"|format(ncf_eval.precision_at_5 * 100) }}%{% else %}<em>N/A</em>{% endif %}</td>
+                        <td style="text-align:center;">{{ winner(knn_eval.precision_at_5, ncf_eval.precision_at_5 if ncf_eval else 0) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="metric-name">Precision@10</td>
+                        <td class="metric-val knn-val">{{ "%.2f"|format(knn_eval.precision_at_10 * 100) }}%</td>
+                        <td class="metric-val ncf-val">{% if ncf_eval %}{{ "%.2f"|format(ncf_eval.precision_at_10 * 100) }}%{% else %}<em>N/A</em>{% endif %}</td>
+                        <td style="text-align:center;">{{ winner(knn_eval.precision_at_10, ncf_eval.precision_at_10 if ncf_eval else 0) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="metric-name">Recall@5</td>
+                        <td class="metric-val knn-val">{{ "%.2f"|format(knn_eval.recall_at_5 * 100) }}%</td>
+                        <td class="metric-val ncf-val">{% if ncf_eval %}{{ "%.2f"|format(ncf_eval.recall_at_5 * 100) }}%{% else %}<em>N/A</em>{% endif %}</td>
+                        <td style="text-align:center;">{{ winner(knn_eval.recall_at_5, ncf_eval.recall_at_5 if ncf_eval else 0) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="metric-name">Recall@10</td>
+                        <td class="metric-val knn-val">{{ "%.2f"|format(knn_eval.recall_at_10 * 100) }}%</td>
+                        <td class="metric-val ncf-val">{% if ncf_eval %}{{ "%.2f"|format(ncf_eval.recall_at_10 * 100) }}%{% else %}<em>N/A</em>{% endif %}</td>
+                        <td style="text-align:center;">{{ winner(knn_eval.recall_at_10, ncf_eval.recall_at_10 if ncf_eval else 0) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="metric-name">F1@5</td>
+                        <td class="metric-val knn-val">{{ "%.2f"|format(knn_eval.f1_at_5 * 100) }}%</td>
+                        <td class="metric-val ncf-val">{% if ncf_eval %}{{ "%.2f"|format(ncf_eval.f1_at_5 * 100) }}%{% else %}<em>N/A</em>{% endif %}</td>
+                        <td style="text-align:center;">{{ winner(knn_eval.f1_at_5, ncf_eval.f1_at_5 if ncf_eval else 0) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="metric-name">F1@10</td>
+                        <td class="metric-val knn-val">{{ "%.2f"|format(knn_eval.f1_at_10 * 100) }}%</td>
+                        <td class="metric-val ncf-val">{% if ncf_eval %}{{ "%.2f"|format(ncf_eval.f1_at_10 * 100) }}%{% else %}<em>N/A</em>{% endif %}</td>
+                        <td style="text-align:center;">{{ winner(knn_eval.f1_at_10, ncf_eval.f1_at_10 if ncf_eval else 0) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="metric-name">NDCG@10</td>
+                        <td class="metric-val knn-val">{{ "%.2f"|format(knn_eval.ndcg_at_10 * 100) }}%</td>
+                        <td class="metric-val ncf-val">{% if ncf_eval %}{{ "%.2f"|format(ncf_eval.ndcg_at_10 * 100) }}%{% else %}<em>N/A</em>{% endif %}</td>
+                        <td style="text-align:center;">{{ winner(knn_eval.ndcg_at_10, ncf_eval.ndcg_at_10 if ncf_eval else 0) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="metric-name">MAE (↓ lebih baik)</td>
+                        <td class="metric-val knn-val">{{ "%.4f"|format(knn_eval.mae) }}</td>
+                        <td class="metric-val ncf-val">{% if ncf_eval %}{{ "%.4f"|format(ncf_eval.mae) }}{% else %}<em>N/A</em>{% endif %}</td>
+                        <td style="text-align:center;">{{ winner(knn_eval.mae, ncf_eval.mae if ncf_eval else 99, higher_is_better=false) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="metric-name">RMSE (↓ lebih baik)</td>
+                        <td class="metric-val knn-val">{{ "%.4f"|format(knn_eval.rmse) }}</td>
+                        <td class="metric-val ncf-val">{% if ncf_eval %}{{ "%.4f"|format(ncf_eval.rmse) }}{% else %}<em>N/A</em>{% endif %}</td>
+                        <td style="text-align:center;">{{ winner(knn_eval.rmse, ncf_eval.rmse if ncf_eval else 99, higher_is_better=false) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="metric-name">Data Uji</td>
+                        <td class="metric-val knn-val">{{ knn_eval.evaluated_users|default(0) }} user / {{ knn_eval.total_test }} rating</td>
+                        <td class="metric-val ncf-val">{% if ncf_eval %}{{ ncf_eval.evaluated_users }}/{{ ncf_eval.total_users }} user{% else %}<em>N/A</em>{% endif %}</td>
+                        <td></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        {% if not ncf_eval %}
+        <div class="alert alert-warning mt-2">
+            <i class="bi bi-exclamation-triangle"></i>
+            Model NCF belum di-training. <a href="{{ url_for('admin.train_model') }}" class="btn btn-primary btn-sm" style="margin-left:0.5rem;">Training Sekarang</a>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Penjelasan Metrik -->
+    <div class="glass-card mb-3">
+        <h2 style="margin-bottom: 1rem; font-size: 1.1rem;">
+            <i class="bi bi-book" style="color: var(--accent-light);"></i> Penjelasan Metrik Evaluasi
+        </h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem;">
+            <div class="metric-explain">
+                <div class="metric-explain-icon" style="color: var(--primary); background: rgba(26,86,219,0.1);">P@K</div>
+                <div>
+                    <strong>Precision@K</strong>
+                    <p>Proporsi item relevan (rating ≥ 4) dari K rekomendasi teratas.</p>
+                    <code>|Relevan ∩ Rekomendasi@K| / K</code>
+                </div>
+            </div>
+            <div class="metric-explain">
+                <div class="metric-explain-icon" style="color: var(--secondary); background: rgba(14,165,233,0.1);">R@K</div>
+                <div>
+                    <strong>Recall@K</strong>
+                    <p>Cakupan item relevan yang berhasil masuk dalam Top-K.</p>
+                    <code>|Relevan ∩ Rekomendasi@K| / |Relevan|</code>
+                </div>
+            </div>
+            <div class="metric-explain">
+                <div class="metric-explain-icon" style="color: var(--accent); background: rgba(245,158,11,0.1);">F1</div>
+                <div>
+                    <strong>F1-Score@K</strong>
+                    <p>Keseimbangan antara Precision dan Recall.</p>
+                    <code>2 × P@K × R@K / (P@K + R@K)</code>
+                </div>
+            </div>
+            <div class="metric-explain">
+                <div class="metric-explain-icon" style="color: var(--danger); background: rgba(239,68,68,0.1);">MAE</div>
+                <div>
+                    <strong>MAE (Mean Absolute Error)</strong>
+                    <p>Rata-rata selisih absolut antara prediksi dan aktual.</p>
+                    <code>(1/n) Σ|actual - predicted|</code>
+                </div>
+            </div>
+            <div class="metric-explain">
+                <div class="metric-explain-icon" style="color: var(--primary-dark); background: rgba(30,64,175,0.1);">RMSE</div>
+                <div>
+                    <strong>RMSE (Root Mean Squared Error)</strong>
+                    <p>Lebih sensitif terhadap error besar dibanding MAE.</p>
+                    <code>√((1/n) Σ(actual - predicted)²)</code>
+                </div>
+            </div>
+            <div class="metric-explain">
+                <div class="metric-explain-icon" style="color: var(--success); background: rgba(16,185,129,0.1);">NDCG</div>
+                <div>
+                    <strong>NDCG@K (Normalized DCG)</strong>
+                    <p>Kualitas ranking — item relevan di posisi atas diberi bobot lebih.</p>
+                    <code>DCG@K / IDCG@K</code>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+.chart-title {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 0.2rem;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+.chart-subtitle {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+}
+
+/* Table metric styles */
+.metric-name { font-weight: 600; color: var(--text-secondary); }
+.metric-val { text-align: center; font-weight: 700; font-size: 1rem; }
+.knn-val { color: var(--primary); }
+.ncf-val { color: var(--secondary); }
+
+.win-badge {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 50px;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+.win-badge.knn {
+    background: rgba(26,86,219,0.1);
+    color: var(--primary);
+    border: 1px solid rgba(26,86,219,0.2);
+}
+.win-badge.ncf {
+    background: rgba(14,165,233,0.1);
+    color: var(--secondary);
+    border: 1px solid rgba(14,165,233,0.2);
+}
+.win-badge.tie {
+    background: rgba(100,100,100,0.08);
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+}
+
+/* Metric explain cards */
+.metric-explain {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+    font-size: 0.85rem;
+}
+.metric-explain-icon {
+    flex-shrink: 0;
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 0.75rem;
+    text-align: center;
+}
+.metric-explain strong { display: block; margin-bottom: 0.3rem; }
+.metric-explain p { color: var(--text-secondary); margin-bottom: 0.3rem; line-height: 1.4; }
+.metric-explain code { font-size: 0.75rem; background: rgba(26,86,219,0.06); padding: 0.2rem 0.5rem; border-radius: 4px; }
+
+@media (max-width: 768px) {
+    div[style*="grid-template-columns: 1fr 1fr"] { grid-template-columns: 1fr !important; }
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+Chart.defaults.color = '#475569';
+Chart.defaults.borderColor = 'rgba(26,86,219,0.08)';
+
+const KNN_COLOR  = 'rgba(26,86,219,0.85)';
+const NCF_COLOR  = 'rgba(14,165,233,0.85)';
+const KNN_LIGHT  = 'rgba(26,86,219,0.15)';
+const NCF_LIGHT  = 'rgba(14,165,233,0.15)';
+
+const chartOpts = {
+    responsive: true,
+    plugins: {
+        legend: { position: 'bottom', labels: { usePointStyle: true, padding: 20 } },
+        tooltip: { mode: 'index', intersect: false }
+    }
+};
+
+fetch('{{ url_for("admin.evaluasi_chart_data") }}')
+    .then(r => r.json())
+    .then(d => {
+        document.getElementById('chartLoading').style.display = 'none';
+        document.getElementById('chartsSection').style.display = 'block';
+
+        const knn = d.knn;
+        const ncf = d.ncf;
+        const hasNcf = Object.values(ncf).some(v => v > 0);
+
+        // --- Precision@K ---
+        new Chart(document.getElementById('chartPrecision'), {
+            type: 'bar',
+            data: {
+                labels: ['Precision@5', 'Precision@10'],
+                datasets: [
+                    { label: 'KNN', data: [knn.precision_at_5, knn.precision_at_10], backgroundColor: KNN_COLOR, borderRadius: 8, borderSkipped: false },
+                    { label: 'NCF', data: [ncf.precision_at_5, ncf.precision_at_10], backgroundColor: NCF_COLOR, borderRadius: 8, borderSkipped: false }
+                ]
+            },
+            options: { ...chartOpts, scales: { y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } } } }
+        });
+
+        // --- Recall@K ---
+        new Chart(document.getElementById('chartRecall'), {
+            type: 'bar',
+            data: {
+                labels: ['Recall@5', 'Recall@10'],
+                datasets: [
+                    { label: 'KNN', data: [knn.recall_at_5, knn.recall_at_10], backgroundColor: KNN_COLOR, borderRadius: 8, borderSkipped: false },
+                    { label: 'NCF', data: [ncf.recall_at_5, ncf.recall_at_10], backgroundColor: NCF_COLOR, borderRadius: 8, borderSkipped: false }
+                ]
+            },
+            options: { ...chartOpts, scales: { y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } } } }
+        });
+
+        // --- F1@K ---
+        new Chart(document.getElementById('chartF1'), {
+            type: 'bar',
+            data: {
+                labels: ['F1@5', 'F1@10'],
+                datasets: [
+                    { label: 'KNN', data: [knn.f1_at_5, knn.f1_at_10], backgroundColor: 'rgba(245,158,11,0.8)', borderRadius: 8, borderSkipped: false },
+                    { label: 'NCF', data: [ncf.f1_at_5, ncf.f1_at_10], backgroundColor: 'rgba(16,185,129,0.8)', borderRadius: 8, borderSkipped: false }
+                ]
+            },
+            options: { ...chartOpts, scales: { y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } } } }
+        });
+
+        // --- Radar ---
+        const radarMax = 100;
+        new Chart(document.getElementById('chartRadar'), {
+            type: 'radar',
+            data: {
+                labels: ['P@5', 'P@10', 'R@5', 'R@10', 'F1@5', 'F1@10', 'NDCG@10'],
+                datasets: [
+                    {
+                        label: 'KNN',
+                        data: [knn.precision_at_5, knn.precision_at_10, knn.recall_at_5, knn.recall_at_10, knn.f1_at_5, knn.f1_at_10, knn.ndcg_at_10 || 0],
+                        backgroundColor: KNN_LIGHT,
+                        borderColor: KNN_COLOR,
+                        borderWidth: 2.5,
+                        pointBackgroundColor: KNN_COLOR,
+                        pointRadius: 4
+                    },
+                    {
+                        label: 'NCF',
+                        data: [ncf.precision_at_5, ncf.precision_at_10, ncf.recall_at_5, ncf.recall_at_10, ncf.f1_at_5, ncf.f1_at_10, ncf.ndcg_at_10 || 0],
+                        backgroundColor: NCF_LIGHT,
+                        borderColor: NCF_COLOR,
+                        borderWidth: 2.5,
+                        pointBackgroundColor: NCF_COLOR,
+                        pointRadius: 4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, padding: 20 } } },
+                scales: {
+                    r: {
+                        beginAtZero: true,
+                        max: radarMax,
+                        ticks: { callback: v => v + '%', stepSize: 20, font: { size: 10 } },
+                        grid: { color: 'rgba(26,86,219,0.08)' },
+                        pointLabels: { font: { size: 11, weight: '600' }, color: '#475569' }
+                    }
+                }
+            }
+        });
+
+        // --- MAE / RMSE ---
+        new Chart(document.getElementById('chartError'), {
+            type: 'bar',
+            data: {
+                labels: ['MAE', 'RMSE'],
+                datasets: [
+                    { label: 'KNN', data: [knn.mae, knn.rmse], backgroundColor: 'rgba(239,68,68,0.75)', borderRadius: 8, borderSkipped: false },
+                    { label: 'NCF', data: [ncf.mae, ncf.rmse], backgroundColor: 'rgba(245,158,11,0.75)', borderRadius: 8, borderSkipped: false }
+                ]
+            },
+            options: {
+                ...chartOpts,
+                scales: { y: { beginAtZero: true } },
+                plugins: { ...chartOpts.plugins, tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(4)}` } } }
+            }
+        });
+
+        // --- Overall (line chart avg per K) ---
+        const knnAvgK5 = ((knn.precision_at_5 + knn.recall_at_5 + knn.f1_at_5) / 3).toFixed(2);
+        const knnAvgK10 = ((knn.precision_at_10 + knn.recall_at_10 + knn.f1_at_10) / 3).toFixed(2);
+        const ncfAvgK5 = ((ncf.precision_at_5 + ncf.recall_at_5 + ncf.f1_at_5) / 3).toFixed(2);
+        const ncfAvgK10 = ((ncf.precision_at_10 + ncf.recall_at_10 + ncf.f1_at_10) / 3).toFixed(2);
+
+        new Chart(document.getElementById('chartOverall'), {
+            type: 'line',
+            data: {
+                labels: ['@5', '@10'],
+                datasets: [
+                    {
+                        label: 'KNN Overall',
+                        data: [knnAvgK5, knnAvgK10],
+                        borderColor: KNN_COLOR,
+                        backgroundColor: KNN_LIGHT,
+                        fill: true,
+                        tension: 0.4,
+                        borderWidth: 3,
+                        pointBackgroundColor: KNN_COLOR,
+                        pointRadius: 6
+                    },
+                    {
+                        label: 'NCF Overall',
+                        data: [ncfAvgK5, ncfAvgK10],
+                        borderColor: NCF_COLOR,
+                        backgroundColor: NCF_LIGHT,
+                        fill: true,
+                        tension: 0.4,
+                        borderWidth: 3,
+                        pointBackgroundColor: NCF_COLOR,
+                        pointRadius: 6
+                    }
+                ]
+            },
+            options: {
+                ...chartOpts,
+                scales: { y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } } }
+            }
+        });
+    })
+    .catch(err => {
+        document.getElementById('chartLoading').innerHTML = `
+            <i class="bi bi-exclamation-triangle" style="font-size:2rem;color:var(--danger);display:block;margin-bottom:1rem;"></i>
+            Gagal memuat data chart: ${err.message}`;
+    });
+</script>
+{% endblock %}

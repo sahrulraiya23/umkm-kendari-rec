@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="dashboard-header" style="text-align: center; border-bottom: none; padding-bottom: 0.5rem;">
+        <h1 style="justify-content: center;"><i class="bi bi-speedometer2" style="color: var(--primary);"></i> Dashboard Admin</h1>
+        <p>Ringkasan statistik sistem UMKM Kendari</p>
+    </div>
+
+    <!-- Statistik -->
+    <div class="stats-grid" style="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));">
+        <div class="stat-card">
+            <div style="font-size: 1.5rem; margin-bottom: 0.3rem; color: var(--primary);"><i class="bi bi-people-fill"></i></div>
+            <div class="stat-number">{{ stats.total_users }}</div>
+            <div class="stat-label">Total User</div>
+        </div>
+        <div class="stat-card">
+            <div style="font-size: 1.5rem; margin-bottom: 0.3rem; color: var(--info);"><i class="bi bi-cart-check"></i></div>
+            <div class="stat-number">{{ stats.total_buyers }}</div>
+            <div class="stat-label">Pembeli</div>
+        </div>
+        <div class="stat-card">
+            <div style="font-size: 1.5rem; margin-bottom: 0.3rem; color: var(--secondary);"><i class="bi bi-shop"></i></div>
+            <div class="stat-number">{{ stats.total_sellers }}</div>
+            <div class="stat-label">Penjual UMKM</div>
+        </div>
+        <div class="stat-card">
+            <div style="font-size: 1.5rem; margin-bottom: 0.3rem; color: var(--success);"><i class="bi bi-box-seam"></i></div>
+            <div class="stat-number">{{ stats.total_produk }}</div>
+            <div class="stat-label">Produk</div>
+        </div>
+        <div class="stat-card">
+            <div style="font-size: 1.5rem; margin-bottom: 0.3rem; color: var(--accent);"><i class="bi bi-tags"></i></div>
+            <div class="stat-number">{{ stats.total_kategori }}</div>
+            <div class="stat-label">Kategori</div>
+        </div>
+        <div class="stat-card">
+            <div style="font-size: 1.5rem; margin-bottom: 0.3rem; color: var(--danger);"><i class="bi bi-star-fill"></i></div>
+            <div class="stat-number">{{ stats.total_ratings }}</div>
+            <div class="stat-label">Rating</div>
+        </div>
+    </div>
+
+    <!-- Charts -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1rem;">
+        <div class="glass-card">
+            <h3 style="margin-bottom: 1rem; font-size: 1.05rem; display: flex; align-items: center; gap: 0.5rem;"><i class="bi bi-bar-chart" style="color: var(--primary);"></i> Rating per Kategori</h3>
+            <canvas id="chartKategori" height="250"></canvas>
+        </div>
+        <div class="glass-card">
+            <h3 style="margin-bottom: 1rem; font-size: 1.05rem; display: flex; align-items: center; gap: 0.5rem;"><i class="bi bi-pie-chart" style="color: var(--secondary);"></i> Distribusi Rating</h3>
+            <canvas id="chartDistribusi" height="250"></canvas>
+        </div>
+        <div class="glass-card">
+            <h3 style="margin-bottom: 1rem; font-size: 1.05rem; display: flex; align-items: center; gap: 0.5rem;"><i class="bi bi-trophy" style="color: var(--accent);"></i> Top Produk (Rating Terbanyak)</h3>
+            <canvas id="chartTopProduk" height="250"></canvas>
+        </div>
+        <div class="glass-card">
+            <h3 style="margin-bottom: 1rem; font-size: 1.05rem; display: flex; align-items: center; gap: 0.5rem;"><i class="bi bi-people" style="color: var(--success);"></i> Distribusi User</h3>
+            <canvas id="chartUsers" height="250"></canvas>
+        </div>
+    </div>
+
+    <!-- Menu Admin -->
+    <div class="section" style="margin-top: 2rem;">
+        <h2 style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.2rem;"><i class="bi bi-grid" style="color: var(--primary);"></i> Menu Kelola</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem;">
+            <a href="{{ url_for('admin.kelola_kategori') }}" class="stat-card" style="text-decoration: none; cursor: pointer;">
+                <div style="font-size: 1.8rem; margin-bottom: 0.3rem; color: var(--primary);"><i class="bi bi-tags"></i></div>
+                <div class="stat-label" style="font-weight: 600; color: var(--text-primary);">Kelola Kategori</div>
+            </a>
+            <a href="{{ url_for('admin.kelola_produk') }}" class="stat-card" style="text-decoration: none; cursor: pointer;">
+                <div style="font-size: 1.8rem; margin-bottom: 0.3rem; color: var(--success);"><i class="bi bi-box-seam"></i></div>
+                <div class="stat-label" style="font-weight: 600; color: var(--text-primary);">Kelola Produk</div>
+            </a>
+            <a href="{{ url_for('admin.kelola_users') }}" class="stat-card" style="text-decoration: none; cursor: pointer;">
+                <div style="font-size: 1.8rem; margin-bottom: 0.3rem; color: var(--secondary);"><i class="bi bi-people-fill"></i></div>
+                <div class="stat-label" style="font-weight: 600; color: var(--text-primary);">Kelola Users</div>
+            </a>
+            <a href="{{ url_for('admin.train_model') }}" class="stat-card" style="text-decoration: none; cursor: pointer;">
+                <div style="font-size: 1.8rem; margin-bottom: 0.3rem; color: var(--accent);"><i class="bi bi-cpu"></i></div>
+                <div class="stat-label" style="font-weight: 600; color: var(--text-primary);">Training Model NCF</div>
+            </a>
+            <a href="{{ url_for('admin.evaluasi') }}" class="stat-card" style="text-decoration: none; cursor: pointer;">
+                <div style="font-size: 1.8rem; margin-bottom: 0.3rem; color: var(--success);"><i class="bi bi-graph-up"></i></div>
+                <div class="stat-label" style="font-weight: 600; color: var(--text-primary);">Evaluasi Model</div>
+            </a>
+            <a href="{{ url_for('admin.kelola_operasional') }}" class="stat-card" style="text-decoration: none; cursor: pointer;">
+                <div style="font-size: 1.8rem; margin-bottom: 0.3rem; color: var(--info);"><i class="bi bi-clock-history"></i></div>
+                <div class="stat-label" style="font-weight: 600; color: var(--text-primary);">Jam Operasional</div>
+            </a>
+            <a href="{{ url_for('admin.kelola_operasional_seller') }}" class="stat-card" style="text-decoration: none; cursor: pointer;">
+                <div style="font-size: 1.8rem; margin-bottom: 0.3rem; color: var(--danger);"><i class="bi bi-shop"></i></div>
+                <div class="stat-label" style="font-weight: 600; color: var(--text-primary);">Operasional Per Toko</div>
+            </a>
+        </div>
+    </div>
+
+    <!-- Export -->
+    <div class="section" style="margin-top: 2rem;">
+        <h2 style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.2rem;"><i class="bi bi-download" style="color: var(--primary);"></i> Export Data</h2>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="{{ url_for('admin.export_ratings') }}" class="btn btn-secondary btn-sm">
+                <i class="bi bi-file-earmark-spreadsheet"></i> Export Ratings (CSV)
+            </a>
+            <a href="{{ url_for('admin.export_users') }}" class="btn btn-secondary btn-sm">
+                <i class="bi bi-file-earmark-spreadsheet"></i> Export Users (CSV)
+            </a>
+            <a href="{{ url_for('admin.export_produk') }}" class="btn btn-secondary btn-sm">
+                <i class="bi bi-file-earmark-spreadsheet"></i> Export Produk (CSV)
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+Chart.defaults.color = '#475569';
+Chart.defaults.borderColor = 'rgba(37, 99, 235, 0.06)';
+Chart.defaults.font.family = "'Inter', sans-serif";
+
+const colors = ['#2563EB', '#0891B2', '#F59E0B', '#10B981', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6'];
+const pieColors = ['rgba(37,99,235,0.8)', 'rgba(8,145,178,0.8)', 'rgba(245,158,11,0.8)', 'rgba(16,185,129,0.8)', 'rgba(239,68,68,0.8)'];
+
+fetch('{{ url_for("admin.chart_data") }}')
+.then(r => r.json())
+.then(data => {
+    // Rating per Kategori
+    new Chart(document.getElementById('chartKategori'), {
+        type: 'bar',
+        data: {
+            labels: data.rating_per_kategori.labels,
+            datasets: [{
+                label: 'Total Rating',
+                data: data.rating_per_kategori.totals,
+                backgroundColor: colors.slice(0, data.rating_per_kategori.labels.length),
+                borderRadius: 8,
+                borderSkipped: false
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.04)' } },
+                x: { grid: { display: false } }
+            }
+        }
+    });
+
+    // Distribusi Rating
+    new Chart(document.getElementById('chartDistribusi'), {
+        type: 'doughnut',
+        data: {
+            labels: data.rating_distribusi.labels,
+            datasets: [{
+                data: data.rating_distribusi.totals,
+                backgroundColor: pieColors,
+                borderWidth: 2,
+                borderColor: '#fff',
+                hoverOffset: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { position: 'bottom', labels: { padding: 16 } } },
+            cutout: '55%'
+        }
+    });
+
+    // Top Produk
+    new Chart(document.getElementById('chartTopProduk'), {
+        type: 'bar',
+        data: {
+            labels: data.top_produk.labels,
+            datasets: [{
+                label: 'Total Rating',
+                data: data.top_produk.totals,
+                backgroundColor: 'rgba(8,145,178,0.7)',
+                borderRadius: 6,
+                borderSkipped: false
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.04)' } },
+                y: { grid: { display: false } }
+            }
+        }
+    });
+
+    // User Roles
+    new Chart(document.getElementById('chartUsers'), {
+        type: 'pie',
+        data: {
+            labels: data.user_roles.labels,
+            datasets: [{
+                data: data.user_roles.totals,
+                backgroundColor: ['#2563EB', '#0891B2', '#F59E0B'],
+                borderWidth: 2,
+                borderColor: '#fff',
+                hoverOffset: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { position: 'bottom', labels: { padding: 16 } } }
+        }
+    });
+});
+</script>
+{% endblock %}

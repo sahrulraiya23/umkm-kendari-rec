@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}{% if search_keyword %}Hasil Pencarian: {{ search_keyword }}{% elif kategori %}{{ kategori.nama }}{% else %}Semua Produk{% endif %} | UMKM Kendari{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top: 2rem;">
+    <!-- Modern Header Section -->
+    <div class="page-hero">
+        {% if search_keyword %}
+        <div class="page-hero-icon">
+            <i class="bi bi-search"></i>
+        </div>
+        <h1>
+            Hasil Pencarian: "<span style="color:var(--primary);">{{ search_keyword }}</span>"
+        </h1>
+        <p>Ditemukan <strong>{{ total }}</strong> produk UMKM yang sesuai dengan pencarian Anda.</p>
+
+        {% elif kategori %}
+        <div class="page-hero-icon">
+            <i class="{{ kategori.icon }}"></i>
+        </div>
+        <h1>Kategori: {{ kategori.nama }}</h1>
+        <p>{{ kategori.deskripsi or 'Jelajahi berbagai produk terbaik dari UMKM lokal Kendari di kategori ini.' }}</p>
+        <div style="margin-top: 1.2rem;">
+            <span class="count-pill">Total <strong>{{ total }}</strong> Produk</span>
+        </div>
+
+        {% else %}
+        <h1>Katalog Produk UMKM</h1>
+        <p>Temukan produk-produk terbaik dari pengrajin dan pelaku usaha lokal Kendari.</p>
+        {% endif %}
+    </div>
+
+    <!-- Filter Section -->
+    <div class="filter-bar">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <i class="bi bi-funnel-fill" style="color: var(--primary);"></i>
+            <span style="font-weight: 600; color: var(--text-primary); font-size: 0.88rem;">Filter:</span>
+        </div>
+
+        <!-- Kecamatan Filter -->
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <label for="kecamatan-select" style="font-size: 0.85rem; color: var(--text-secondary); font-weight: 500;">Kecamatan:</label>
+            <select id="kecamatan-select" onchange="filterByKecamatan(this.value)">
+                <option value="">Semua Kecamatan</option>
+                {% for kec in kecamatan_list %}
+                <option value="{{ kec }}" {% if selected_kecamatan == kec %}selected{% endif %}>{{ kec }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        {% if selected_kecamatan %}
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <span class="filter-chip">
+                {{ selected_kecamatan }}
+            </span>
+            <a href="{{ url_for('main.list_produk') }}" style="color: var(--text-muted); text-decoration: none; font-size: 0.85rem;" title="Hapus filter">
+                <i class="bi bi-x-circle"></i>
+            </a>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Product Grid -->
+    {% if produk_list %}
+    <div class="product-grid">
+        {% for produk in produk_list %}
+        <div class="product-card" style="display: flex; flex-direction: column; height: 100%;">
+            <div class="card-image" style="height: 220px; position: relative;">
+                <a href="{{ url_for('main.detail_produk', produk_id=produk.id) }}" class="product-image-wrapper">
+                    <img src="{{ url_for('static', filename='uploads/' + produk.gambar) }}" alt="{{ produk.nama }}"
+                         onerror="let wrapper = this.closest('.product-image-wrapper'); wrapper.querySelector('img').style.display='none'; wrapper.querySelector('.no-photo-placeholder').style.display='flex';"
+                         style="width: 100%; height: 100%; object-fit: cover; display: block;">
+                    <div class="no-photo-placeholder" style="display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0;">
+                        <i class="bi bi-image"></i>
+                        <span>No Photos</span>
+                    </div>
+                </a>
+                <div class="rating-badge">
+                    <i class="bi bi-star-fill"></i> {{ "{:.1f}".format(produk.avg_rating) }} <span style="color: var(--text-muted); font-weight: 500;">({{ produk.total_rating }})</span>
+                </div>
+            </div>
+            <div class="card-body" style="flex: 1; display: flex; flex-direction: column;">
+                <div class="card-category">
+                    {{ produk.kategori_nama or 'Umum' }}
+                </div>
+                <h3 class="card-title" style="min-height: 2.8rem; margin-bottom: auto;">
+                    <a href="{{ url_for('main.detail_produk', produk_id=produk.id) }}">{{ produk.nama }}</a>
+                </h3>
+                <div class="card-footer-bar">
+                    <div>
+                        <div class="card-price-label">Harga</div>
+                        <div class="card-price-value">Rp {{ "{:,.0f}".format(produk.harga).replace(',', '.') }}</div>
+                    </div>
+                    <a href="{{ url_for('main.detail_produk', produk_id=produk.id) }}" class="btn btn-primary btn-sm" style="border-radius: var(--radius-full); padding: 0.4rem 1rem;">
+                        Lihat <i class="bi bi-arrow-right"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if total_pages is defined and total_pages > 1 %}
+    {# Build base query string preserving all active filters #}
+    {% set qs_parts = [] %}
+    {% if search_keyword %}{% set _ = qs_parts.append('q=' ~ search_keyword) %}{% endif %}
+    {% if request.args.get('kategori') %}{% set _ = qs_parts.append('kategori=' ~ request.args.get('kategori')) %}{% endif %}
+    {% if request.args.get('kecamatan') %}{% set _ = qs_parts.append('kecamatan=' ~ request.args.get('kecamatan')) %}{% endif %}
+    {% set base_qs = qs_parts | join('&') %}
+    {% set sep = '&' if base_qs else '' %}
+
+    <div class="pagination-wrapper">
+        {% if page > 1 %}
+        <a href="?{{ base_qs }}{{ sep }}page={{ page - 1 }}" class="page-btn page-btn-nav">
+            <i class="bi bi-chevron-left"></i> Prev
+        </a>
+        {% else %}
+        <span class="page-btn page-btn-nav disabled"><i class="bi bi-chevron-left"></i> Prev</span>
+        {% endif %}
+
+        <div class="page-numbers">
+            {% for p in range(1, total_pages + 1) %}
+                {% if p == page %}
+                <span class="page-btn active">{{ p }}</span>
+                {% elif p <= 2 or p > total_pages - 2 or (p >= page - 2 and p <= page + 2) %}
+                <a href="?{{ base_qs }}{{ sep }}page={{ p }}" class="page-btn">{{ p }}</a>
+                {% elif p == 3 or p == total_pages - 2 %}
+                <span class="page-ellipsis">…</span>
+                {% endif %}
+            {% endfor %}
+        </div>
+
+        {% if page < total_pages %}
+        <a href="?{{ base_qs }}{{ sep }}page={{ page + 1 }}" class="page-btn page-btn-nav">
+            Next <i class="bi bi-chevron-right"></i>
+        </a>
+        {% else %}
+        <span class="page-btn page-btn-nav disabled">Next <i class="bi bi-chevron-right"></i></span>
+        {% endif %}
+    </div>
+    {% endif %}
+
+
+    {% else %}
+    <!-- Empty State -->
+    <div style="text-align: center; padding: 5rem 2rem; background: var(--bg-card); border: 2px dashed var(--border-color); border-radius: var(--radius-xl); margin-bottom: 4rem;">
+        <div class="page-hero-icon" style="margin: 0 auto 1.5rem;">
+            <i class="bi bi-search"></i>
+        </div>
+        <h3 style="font-size: 1.4rem; color: var(--text-primary); margin-bottom: 0.5rem; font-family: 'Plus Jakarta Sans', sans-serif;">Opss.. Produk tidak ditemukan</h3>
+        {% if search_keyword %}
+        <p style="color: var(--text-secondary); max-width: 500px; margin: 0 auto 2rem auto;">Kami tidak menemukan produk yang cocok dengan kata kunci "<strong>{{ search_keyword }}</strong>". Coba gunakan kata kunci lain atau periksa ejaan Anda.</p>
+        <a href="{{ url_for('main.index') }}" class="btn btn-primary" style="border-radius: var(--radius-full);"><i class="bi bi-house"></i> Kembali ke Beranda</a>
+        {% else %}
+        <p style="color: var(--text-secondary); max-width: 500px; margin: 0 auto 2rem auto;">Belum ada produk yang tersedia dalam kategori ini. Silakan cek kembali nanti atau telusuri kategori lainnya.</p>
+        <a href="{{ url_for('main.index') }}" class="btn btn-primary" style="border-radius: var(--radius-full);"><i class="bi bi-grid"></i> Lihat Semua Kategori</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+{% block scripts %}
+<script>
+function filterByKecamatan(kecamatan) {
+    const url = new URL(window.location);
+    if (kecamatan) {
+        url.searchParams.set('kecamatan', kecamatan);
+    } else {
+        url.searchParams.delete('kecamatan');
+    }
+    url.searchParams.delete('page');
+    window.location.href = url.toString();
+}
+</script>
+{% endblock %}
+
+{% endblock %}
