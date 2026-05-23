@@ -124,3 +124,12 @@ db.sqlite3
 
 *.tmp
 *.bak
+
+# ================================
+# PROJECT SPECIFIC FILES
+# ================================
+umkm_kendari.db
+test_gemini.py
+static/uploads/*
+!static/uploads/.gitkeep
+*.keras

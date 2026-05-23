@@ -5,6 +5,7 @@ from models.kategori import Kategori
 from models.rating import Rating
 from recommendation.engine import get_recommendations
 from datetime import datetime
+from config import AI_ENABLED
 import re
 
 main_bp = Blueprint('main', __name__)
@@ -200,319 +201,28 @@ def chatbot_page():
 
 @main_bp.route('/api/chat', methods=['POST'])
 def chat_api():
-    """API chatbot rekomendasi."""
+    """API chatbot rekomendasi (Full Gemini)."""
     data = request.get_json()
     message = data.get('message', '').strip().lower() if data else ''
 
     if not message:
         return jsonify({'reply': 'Silakan ketik pesan Anda 😊', 'products': []})
 
-    user_id = current_user.id if current_user.is_authenticated else None
-    from models.database import get_db
-    db = get_db()
-
-    day_names = ['senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu', 'minggu']
-    day_names_title = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu']
-
-    def get_store_schedule():
-        try:
-            rows = db.execute('''
-                SELECT hari_index, hari_nama, buka_jam, tutup_jam, is_open
-                FROM operasional_toko
-                ORDER BY hari_index ASC
-            ''').fetchall()
-            return [dict(r) for r in rows]
-        except Exception:
-            return []
-
-    def get_today_store_status():
-        today_idx = datetime.now().weekday()  # Senin=0 ... Minggu=6
-        try:
-            row = db.execute('''
-                SELECT hari_nama, buka_jam, tutup_jam, is_open
-                FROM operasional_toko
-                WHERE hari_index = ?
-            ''', (today_idx,)).fetchone()
-            if row:
-                return dict(row), today_idx
-        except Exception:
-            pass
-        # Fallback jika tabel belum terisi lengkap
-        fallback_open = 0 if today_idx == 6 else 1
-        return {
-            'hari_nama': day_names_title[today_idx],
-            'buka_jam': '08:00',
-            'tutup_jam': '17:00',
-            'is_open': fallback_open
-        }, today_idx
-
-    def get_today_seller_status(seller_id):
-        today_idx = datetime.now().weekday()
-        try:
-            row = db.execute(
-                '''
-                SELECT hari_nama, buka_jam, tutup_jam, is_open
-                FROM seller_operasional
-                WHERE seller_id = ? AND hari_index = ?
-                ''',
-                (seller_id, today_idx)
-            ).fetchone()
-            if row:
-                return dict(row), today_idx
-        except Exception:
-            pass
-        # fallback ke jadwal umum
-        return get_today_store_status()
-
-    def extract_store_query(msg):
-        cleaned = msg.lower()
-        for token in [
-            'apakah', 'tolong', 'cek', 'status', 'hari ini', 'jam', 'operasional',
-            'buka', 'tutup', 'kah', '?'
-        ]:
-            cleaned = cleaned.replace(token, ' ')
-        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-        return re.sub(r'\s+', ' ', cleaned).strip()
-
-    def format_store_hours():
-        rows = get_store_schedule()
-        if not rows:
-            return '• Senin - Sabtu: 08:00 - 17:00 WITA\n• Minggu: Libur'
-
-        lines = []
-        for row in rows:
-            if int(row.get('is_open') or 0) == 1:
-                lines.append(f"• {row['hari_nama']}: {row['buka_jam']} - {row['tutup_jam']} WITA")
-            else:
-                lines.append(f"• {row['hari_nama']}: Libur")
-        return '\n'.join(lines)
-
-    def produk_to_card(p):
-        """Konversi Produk ke dict untuk render kartu."""
-        url = p.gambar if p.gambar else 'default.jpg'
-        stok_value = int(p.stok or 0)
-        is_ready = bool(p.tersedia) and stok_value > 0
-        return {
-            'id': p.id,
-            'nama': p.nama,
-            'harga': p.harga,
-            'harga_fmt': f"Rp {p.harga:,.0f}",
-            'kategori': p.kategori_nama or 'Umum',
-            'avg_rating': round(p.avg_rating, 1),
-            'total_rating': p.total_rating,
-            'stars': '★' * round(p.avg_rating) + '☆' * (5 - round(p.avg_rating)),
-            'stok': stok_value,
-            'stok_text': f"Stok {stok_value}",
-            'ready_stock': is_ready,
-            'gambar_url': url_for('static', filename='uploads/' + url),
-            'detail_url': url_for('main.detail_produk', produk_id=p.id),
-        }
-
-    def rows_to_cards(rows):
-        """Konversi DB rows ke cards."""
-        cards = []
-        for r in rows:
-            r = dict(r)
-            url = r.get('gambar', 'default.jpg') or 'default.jpg'
-            stok_value = int(r.get('stok') or 0)
-            is_ready = bool(r.get('tersedia')) and stok_value > 0
-            cards.append({
-                'id': r['id'],
-                'nama': r['nama'],
-                'harga_fmt': f"Rp {r['harga']:,.0f}",
-                'kategori': r.get('kategori_nama') or 'Umum',
-                'avg_rating': round(r.get('avg_rating') or 0, 1),
-                'total_rating': r.get('total_rating') or 0,
-                'stars': '★' * round(r.get('avg_rating') or 0) + '☆' * (5 - round(r.get('avg_rating') or 0)),
-                'stok': stok_value,
-                'stok_text': f"Stok {stok_value}",
-                'ready_stock': is_ready,
-                'gambar_url': url_for('static', filename='uploads/' + url),
-                'detail_url': url_for('main.detail_produk', produk_id=r['id']),
-            })
-        return cards
-
-    # Intent: Salam
-    if any(w in message for w in ['halo', 'hai', 'hi', 'selamat', 'pagi', 'siang', 'sore', 'malam', 'hey']):
+    if not AI_ENABLED:
         return jsonify({
-            'reply': 'Halo! 👋 Saya asisten UMKM Kendari.\n\nSaya bisa membantu Anda mengecek:\n• **Jadwal buka toko** (contoh: "toko hari ini buka?")\n• **Ketersediaan stok** (contoh: "stok sinonggi ada?")', 
+            'reply': 'Maaf, fitur AI saat ini sedang dinonaktifkan (API Key belum diatur).',
             'products': []
         })
 
-    # Intent: Status toko spesifik (contoh: "toko kuliner hari ini buka?")
-    if any(w in message for w in ['buka', 'tutup', 'operasional', 'jam']) and 'toko' in message:
-        store_query = extract_store_query(message)
-        if store_query:
-            query_norm = store_query.strip().lower()
-            query_no_toko = query_norm.replace('toko ', '').replace('toko_', '').strip()
-            search_terms = [query_norm]
-            if query_no_toko and query_no_toko not in search_terms:
-                search_terms.append(query_no_toko)
-            if query_no_toko:
-                search_terms.append(f"toko {query_no_toko}")
-                search_terms.append(f"toko_{query_no_toko}")
+    try:
+        from services.ai_chat import get_ai_response
+        ai_reply = get_ai_response(message)
+        return jsonify({'reply': ai_reply, 'products': []})
 
-            sellers = db.execute(
-                '''
-                SELECT id, username, nama_lengkap
-                FROM users
-                WHERE role = 'seller'
-                  AND (
-                    LOWER(username) LIKE ?
-                    OR LOWER(nama_lengkap) LIKE ?
-                    OR LOWER(REPLACE(username, '_', ' ')) LIKE ?
-                    OR LOWER(username) LIKE ?
-                    OR LOWER(nama_lengkap) LIKE ?
-                  )
-                ORDER BY nama_lengkap ASC
-                LIMIT 5
-                ''',
-                (
-                    f'%{search_terms[0]}%',
-                    f'%{search_terms[0]}%',
-                    f'%{search_terms[0]}%',
-                    f'%{search_terms[1] if len(search_terms) > 1 else search_terms[0]}%',
-                    f'%{search_terms[2] if len(search_terms) > 2 else search_terms[0]}%',
-                )
-            ).fetchall()
-
-            if len(sellers) == 1:
-                seller = dict(sellers[0])
-                today_status, _ = get_today_seller_status(seller['id'])
-                is_open = int(today_status.get('is_open') or 0) == 1
-                status_text = '✅ Buka' if is_open else '❌ Tutup'
-                jam_text = (
-                    f" ({today_status.get('buka_jam')} - {today_status.get('tutup_jam')} WITA)"
-                    if is_open else ''
-                )
-                return jsonify({
-                    'reply': (
-                        f"🕒 **Status {seller.get('nama_lengkap')} hari ini ({today_status.get('hari_nama')}):** "
-                        f"{status_text}{jam_text}"
-                    ),
-                    'products': []
-                })
-
-            if len(sellers) > 1:
-                names = '\n'.join([f"• {s['nama_lengkap']}" for s in sellers])
-                return jsonify({
-                    'reply': (
-                        f'Saya menemukan beberapa toko untuk kata kunci **"{store_query}"**:\n{names}\n\n'
-                        'Sebutkan nama toko yang lebih spesifik ya.'
-                    ),
-                    'products': []
-                })
-
-            # Fallback: cari toko lewat produk terkait (jika user menyebut jenis produk)
-            fallback_seller = db.execute(
-                '''
-                SELECT DISTINCT u.id, u.username, u.nama_lengkap
-                FROM users u
-                JOIN produk p ON p.seller_id = u.id
-                WHERE u.role = 'seller'
-                  AND (LOWER(p.nama) LIKE ? OR LOWER(p.deskripsi) LIKE ?)
-                ORDER BY u.nama_lengkap ASC
-                LIMIT 1
-                ''',
-                (f'%{query_no_toko or query_norm}%', f'%{query_no_toko or query_norm}%')
-            ).fetchone()
-            if fallback_seller:
-                seller = dict(fallback_seller)
-                today_status, _ = get_today_seller_status(seller['id'])
-                is_open = int(today_status.get('is_open') or 0) == 1
-                status_text = '✅ Buka' if is_open else '❌ Tutup'
-                jam_text = (
-                    f" ({today_status.get('buka_jam')} - {today_status.get('tutup_jam')} WITA)"
-                    if is_open else ''
-                )
-                return jsonify({
-                    'reply': (
-                        f"🕒 Saya asumsikan maksud Anda toko **{seller.get('nama_lengkap')}**.\n"
-                        f"Status hari ini ({today_status.get('hari_nama')}): {status_text}{jam_text}"
-                    ),
-                    'products': []
-                })
-
-            return jsonify({
-                'reply': f'Saya belum menemukan toko dengan nama **"{store_query}"**.',
-                'products': []
-            })
-
-    # Intent: Status toko hari ini / jam operasional
-    if any(w in message for w in ['buka hari ini', 'hari ini buka', 'toko buka', 'jam buka', 'jam operasional', 'operasional', 'tutup hari ini']):
-        session.pop('chat_context', None)
-        today_status, _ = get_today_store_status()
-        status_text = '✅ Buka' if int(today_status.get('is_open') or 0) == 1 else '❌ Tutup'
-        if int(today_status.get('is_open') or 0) == 1:
-            now_reply = f"{status_text} ({today_status.get('buka_jam')} - {today_status.get('tutup_jam')} WITA)"
-        else:
-            now_reply = status_text
-
+    except Exception as e:
+        print(f'[Chatbot AI Error] {e}')
         return jsonify({
-            'reply': (
-                f"🕒 **Status toko hari ini ({today_status.get('hari_nama')}):** {now_reply}\n\n"
-                f"**Jadwal operasional:**\n{format_store_hours()}"
-            ),
+            'reply': 'Maaf, asisten AI sedang mengalami gangguan. Silakan coba lagi nanti.',
             'products': []
         })
-
-    # Intent: Cek stok spesifik
-    if any(w in message for w in ['stok', 'stock', 'ready', 'tersedia', 'kosong']):
-        raw_query = message
-        for w in [
-            'cek', 'tolong', 'dong', 'apakah', 'ada', 'ga', 'nggak', 'tidak',
-            'stok', 'stock', 'ready', 'tersedia', 'kosong', 'produk', '?'
-        ]:
-            raw_query = raw_query.replace(w, ' ')
-        raw_query = re.sub(r'\s+', ' ', raw_query).strip()
-
-        if not raw_query:
-            return jsonify({
-                'reply': 'Sebutkan nama produknya ya. Contoh: **"stok sinonggi ada?"**.',
-                'products': []
-            })
-
-        rows = db.execute('''
-            SELECT p.*, k.nama as kategori_nama,
-                   COALESCE(AVG(r.score), 0) as avg_rating, COUNT(r.id) as total_rating
-            FROM produk p
-            LEFT JOIN kategori k ON p.kategori_id = k.id
-            LEFT JOIN ratings r ON p.id = r.produk_id
-            WHERE p.nama LIKE ? OR p.deskripsi LIKE ?
-            GROUP BY p.id
-            ORDER BY p.stok DESC, p.created_at DESC
-            LIMIT 5
-        ''', (f'%{raw_query}%', f'%{raw_query}%')).fetchall()
-
-        if not rows:
-            return jsonify({
-                'reply': f'Saya belum menemukan produk **"{raw_query}"** di katalog.',
-                'products': []
-            })
-
-        available_rows = [r for r in rows if int(dict(r).get('stok') or 0) > 0 and int(dict(r).get('tersedia') or 0) == 1]
-        cards = rows_to_cards(available_rows if available_rows else rows)
-
-        first = dict(rows[0])
-        stok_first = int(first.get('stok') or 0)
-        is_ready_first = int(first.get('tersedia') or 0) == 1 and stok_first > 0
-
-        if is_ready_first:
-            reply = f'✅ Produk **{first.get("nama")}** tersedia dengan **stok {stok_first}**.'
-        else:
-            reply = f'❌ Produk **{first.get("nama")}** sedang kosong/habis.'
-
-        if len(rows) > 1:
-            reply += '\n\nBerikut produk terkait yang saya temukan:'
-        return jsonify({'reply': reply, 'products': cards})
-
-    # Intent: Terima kasih
-    if any(w in message for w in ['terima kasih', 'makasih', 'thanks', 'thx', 'ok', 'oke', 'sip']):
-        return jsonify({'reply': 'Sama-sama! 😊 Ada yang lain yang ingin ditanyakan terkait jadwal buka atau stok?', 'products': []})
-
-    # Default
-    return jsonify({
-        'reply': 'Hmm, saya kurang paham 🤔\n\nSaya hanya bisa membantu mengecek:\n• **Jadwal buka toko** (contoh: "toko hari ini buka?")\n• **Ketersediaan stok** (contoh: "stok sinonggi ada?")', 
-        'products': []
-    })
 
