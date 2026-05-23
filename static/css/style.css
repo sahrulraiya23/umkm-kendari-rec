@@ -612,20 +612,23 @@ img {
     transition: var(--transition);
     position: relative;
     box-shadow: var(--shadow-card);
+    display: flex;
+    flex-direction: column;
 }
 
 .product-card:hover {
     transform: translateY(-6px);
-    border-color: rgba(37, 99, 235, 0.2);
+    border-color: rgba(37, 99, 235, 0.25);
     box-shadow: var(--shadow-xl), var(--shadow-glow);
 }
 
 .product-card .card-image {
     width: 100%;
-    height: 200px;
+    height: 210px;
     overflow: hidden;
     position: relative;
     background: var(--bg-surface);
+    flex-shrink: 0;
 }
 
 .product-card .card-image img {
@@ -646,8 +649,8 @@ img {
     bottom: 0;
     left: 0;
     right: 0;
-    height: 50%;
-    background: linear-gradient(to top, rgba(15, 23, 42, 0.15), transparent);
+    height: 55%;
+    background: linear-gradient(to top, rgba(15, 23, 42, 0.25), transparent);
     opacity: 0;
     transition: opacity 0.4s ease;
     pointer-events: none;
@@ -697,7 +700,8 @@ img {
     font-weight: 700;
     font-size: 0.85rem;
     gap: 0.6rem;
-    position: relative;
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
     overflow: hidden;
 }
 
@@ -726,29 +730,101 @@ img {
     font-size: 0.75rem;
 }
 
+/* === STOCK BADGE (top-left on image) === */
+.stock-badge {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 3;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.25rem 0.65rem;
+    border-radius: var(--radius-full);
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    backdrop-filter: blur(8px);
+}
+
+.stock-available {
+    background: rgba(16, 185, 129, 0.88);
+    color: white;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35);
+}
+
+.stock-empty {
+    background: rgba(239, 68, 68, 0.88);
+    color: white;
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+}
+
+/* === CARD BODY === */
 .product-card .card-body {
-    padding: 1.2rem;
+    padding: 1.1rem 1.2rem 1.2rem;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+}
+
+/* Meta row: kategori + UMKM name */
+.card-meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+    margin-bottom: 0.45rem;
+    flex-wrap: wrap;
 }
 
 .product-card .card-category {
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     color: var(--secondary);
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin-bottom: 0.35rem;
+    background: rgba(8, 145, 178, 0.08);
+    padding: 0.18rem 0.55rem;
+    border-radius: var(--radius-full);
+    border: 1px solid rgba(8, 145, 178, 0.15);
+    white-space: nowrap;
 }
 
+/* UMKM Seller Name */
+.card-umkm-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    padding: 0.18rem 0.55rem;
+    border-radius: var(--radius-full);
+    white-space: nowrap;
+    max-width: 130px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.card-umkm-name i {
+    color: var(--accent);
+    font-size: 0.65rem;
+}
+
+/* Product Title */
 .product-card .card-title {
-    font-size: 1rem;
+    font-size: 0.98rem;
     font-weight: 700;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.6rem;
     color: var(--text-primary);
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    line-height: 1.4;
+    line-height: 1.45;
+    min-height: 2.8rem;
 }
 
 .product-card .card-title a {
@@ -758,6 +834,84 @@ img {
 
 .product-card .card-title a:hover {
     color: var(--primary);
+}
+
+/* Stars row */
+.card-stars {
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+    margin-bottom: 0.8rem;
+    font-size: 0.78rem;
+    color: var(--accent);
+}
+
+.card-stars .bi-star {
+    color: #CBD5E1;
+}
+
+.card-review-count {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-left: 0.3rem;
+    font-weight: 500;
+}
+
+/* Divider */
+.card-divider {
+    height: 1px;
+    background: var(--border-light);
+    margin-bottom: 0.9rem;
+}
+
+/* Price + CTA */
+.card-footer-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: auto;
+}
+
+.card-price-block {}
+
+.card-price-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    font-weight: 500;
+    margin-bottom: 0.1rem;
+}
+
+.card-price-value {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--primary);
+    letter-spacing: -0.3px;
+}
+
+/* Lihat Button */
+.card-btn-lihat {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 1rem;
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: white;
+    font-size: 0.8rem;
+    font-weight: 600;
+    border-radius: var(--radius-full);
+    text-decoration: none;
+    transition: var(--transition);
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.card-btn-lihat:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4);
+    color: white;
+    gap: 0.6rem;
 }
 
 .product-card .card-price {

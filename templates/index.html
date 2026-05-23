@@ -4,34 +4,80 @@
 {% block content %}
 {# Macro untuk Product Card agar konsisten #}
 {% macro render_product_card(produk) %}
-<div class="product-card" style="display: flex; flex-direction: column; height: 100%;">
-    <div class="card-image" style="height: 220px; position: relative;">
+<div class="product-card">
+    {# === IMAGE AREA === #}
+    <div class="card-image">
         <a href="{{ url_for('main.detail_produk', produk_id=produk.id) }}" class="product-image-wrapper">
             <img src="{{ url_for('static', filename='uploads/' + produk.gambar) }}" alt="{{ produk.nama }}"
                  onerror="let wrapper = this.closest('.product-image-wrapper'); wrapper.querySelector('img').style.display='none'; wrapper.querySelector('.no-photo-placeholder').style.display='flex';"
                  style="width: 100%; height: 100%; object-fit: cover; display: block;">
-            <div class="no-photo-placeholder" style="display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0;">
+            <div class="no-photo-placeholder" style="display: none;">
                 <i class="bi bi-image"></i>
-                <span>No Photos</span>
+                <span>Belum Ada Foto</span>
             </div>
         </a>
+
+        {# Rating Badge - Top Right #}
         <div class="rating-badge">
-            <i class="bi bi-star-fill"></i> {{ "{:.1f}".format(produk.avg_rating) }} <span style="color: var(--text-muted); font-weight: 500;">({{ produk.total_rating }})</span>
+            <i class="bi bi-star-fill"></i>
+            {{ "{:.1f}".format(produk.avg_rating) }}
+            <span>({{ produk.total_rating }})</span>
         </div>
+
+        {# Stok Badge - Top Left #}
+        {% if produk.tersedia and produk.stok and produk.stok > 0 %}
+        <div class="stock-badge stock-available">
+            <i class="bi bi-check-circle-fill"></i> Tersedia
+        </div>
+        {% else %}
+        <div class="stock-badge stock-empty">
+            <i class="bi bi-x-circle-fill"></i> Kosong
+        </div>
+        {% endif %}
     </div>
-    <div class="card-body" style="flex: 1; display: flex; flex-direction: column;">
-        <div class="card-category">
-            {{ produk.kategori_nama or 'Umum' }}
+
+    {# === BODY AREA === #}
+    <div class="card-body">
+
+        {# Kategori + UMKM Name #}
+        <div class="card-meta-row">
+            <span class="card-category">
+                {{ produk.kategori_nama or 'Umum' }}
+            </span>
+            {% if produk.seller_nama %}
+            <span class="card-umkm-name">
+                <i class="bi bi-shop"></i> {{ produk.seller_nama }}
+            </span>
+            {% endif %}
         </div>
-        <h3 class="card-title" style="min-height: 2.8rem; margin-bottom: auto;">
+
+        {# Product Name #}
+        <h3 class="card-title">
             <a href="{{ url_for('main.detail_produk', produk_id=produk.id) }}">{{ produk.nama }}</a>
         </h3>
+
+        {# Star Display #}
+        <div class="card-stars">
+            {% for i in range(5) %}
+                {% if i < produk.avg_rating|round|int %}
+                    <i class="bi bi-star-fill"></i>
+                {% else %}
+                    <i class="bi bi-star"></i>
+                {% endif %}
+            {% endfor %}
+            <span class="card-review-count">{{ produk.total_rating }} ulasan</span>
+        </div>
+
+        {# Divider #}
+        <div class="card-divider"></div>
+
+        {# Price + Button #}
         <div class="card-footer-bar">
-            <div>
+            <div class="card-price-block">
                 <div class="card-price-label">Harga</div>
                 <div class="card-price-value">Rp {{ "{:,.0f}".format(produk.harga).replace(',', '.') }}</div>
             </div>
-            <a href="{{ url_for('main.detail_produk', produk_id=produk.id) }}" class="btn btn-primary btn-sm" style="border-radius: var(--radius-full); padding: 0.4rem 1rem;">
+            <a href="{{ url_for('main.detail_produk', produk_id=produk.id) }}" class="card-btn-lihat">
                 Lihat <i class="bi bi-arrow-right"></i>
             </a>
         </div>
