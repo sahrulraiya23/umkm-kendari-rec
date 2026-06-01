@@ -153,6 +153,7 @@ def tambah_produk():
         stok = request.form.get('stok', type=int, default=0)
         kategori_id = request.form.get('kategori_id', type=int)
         tersedia = 1 if request.form.get('tersedia') == 'on' else 0
+        kecamatan = request.form.get('kecamatan', '').strip() or 'Kendari'
 
         # Handle upload gambar
         gambar = 'default.jpg'
@@ -172,7 +173,7 @@ def tambah_produk():
         elif harga <= 0:
             flash('Harga harus lebih dari 0', 'danger')
         else:
-            produk_id = Produk.create(nama, deskripsi, harga, stok, gambar, kategori_id, current_user.id, tersedia)
+            produk_id = Produk.create(nama, deskripsi, harga, stok, gambar, kategori_id, current_user.id, tersedia, kecamatan)
             if produk_id:
                 flash(f'Produk "{nama}" berhasil ditambahkan!', 'success')
                 return redirect(url_for('seller.dashboard'))
@@ -199,6 +200,7 @@ def edit_produk(produk_id):
         stok = request.form.get('stok', type=int, default=0)
         kategori_id = request.form.get('kategori_id', type=int)
         tersedia = 1 if request.form.get('tersedia') == 'on' else 0
+        kecamatan = request.form.get('kecamatan', '').strip() or 'Kendari'
 
         gambar = produk.gambar
         if 'gambar' in request.files:
@@ -216,7 +218,7 @@ def edit_produk(produk_id):
         elif harga <= 0:
             flash('Harga harus lebih dari 0', 'danger')
         else:
-            Produk.update(produk_id, nama, deskripsi, harga, stok, gambar, kategori_id, tersedia)
+            Produk.update(produk_id, nama, deskripsi, harga, stok, gambar, kategori_id, tersedia, kecamatan)
             flash(f'Produk "{nama}" berhasil diupdate!', 'success')
             return redirect(url_for('seller.dashboard'))
 

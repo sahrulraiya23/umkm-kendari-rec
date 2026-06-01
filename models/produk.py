@@ -119,12 +119,12 @@ class Produk:
         return [Produk(**dict(row)) for row in rows]
 
     @staticmethod
-    def create(nama, deskripsi, harga, stok, gambar, kategori_id, seller_id, tersedia=1):
+    def create(nama, deskripsi, harga, stok, gambar, kategori_id, seller_id, tersedia=1, kecamatan='Kendari'):
         db = get_db()
         try:
             cursor = db.execute(
-                'INSERT INTO produk (nama, deskripsi, harga, stok, gambar, kategori_id, seller_id, tersedia) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                (nama, deskripsi, harga, stok, gambar, kategori_id, seller_id, int(tersedia))
+                'INSERT INTO produk (nama, deskripsi, harga, stok, gambar, kategori_id, seller_id, tersedia, kecamatan) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                (nama, deskripsi, harga, stok, gambar, kategori_id, seller_id, int(tersedia), kecamatan)
             )
             db.commit()
             return cursor.lastrowid
@@ -133,11 +133,11 @@ class Produk:
             return None
 
     @staticmethod
-    def update(produk_id, nama, deskripsi, harga, stok, gambar, kategori_id, tersedia=1):
+    def update(produk_id, nama, deskripsi, harga, stok, gambar, kategori_id, tersedia=1, kecamatan='Kendari'):
         db = get_db()
         db.execute(
-            'UPDATE produk SET nama=?, deskripsi=?, harga=?, stok=?, gambar=?, kategori_id=?, tersedia=? WHERE id=?',
-            (nama, deskripsi, harga, stok, gambar, kategori_id, int(tersedia), produk_id)
+            'UPDATE produk SET nama=?, deskripsi=?, harga=?, stok=?, gambar=?, kategori_id=?, tersedia=?, kecamatan=? WHERE id=?',
+            (nama, deskripsi, harga, stok, gambar, kategori_id, int(tersedia), kecamatan, produk_id)
         )
         db.commit()
 
