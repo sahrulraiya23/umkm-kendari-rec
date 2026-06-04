@@ -6,6 +6,7 @@ from werkzeug.utils import secure_filename
 from models.produk import Produk
 from models.kategori import Kategori
 from config import UPLOAD_FOLDER
+from services.gsheet_sync import sync_seller
 
 seller_bp = Blueprint('seller', __name__, url_prefix='/seller')
 
@@ -176,6 +177,8 @@ def tambah_produk():
             produk_id = Produk.create(nama, deskripsi, harga, stok, gambar, kategori_id, current_user.id, tersedia, kecamatan)
             if produk_id:
                 flash(f'Produk "{nama}" berhasil ditambahkan!', 'success')
+                # Auto-sync ke Google Sheets (background)
+                sync_seller(current_user.id)
                 return redirect(url_for('seller.dashboard'))
             else:
                 flash('Gagal menambahkan produk', 'danger')
@@ -220,6 +223,8 @@ def edit_produk(produk_id):
         else:
             Produk.update(produk_id, nama, deskripsi, harga, stok, gambar, kategori_id, tersedia, kecamatan)
             flash(f'Produk "{nama}" berhasil diupdate!', 'success')
+            # Auto-sync ke Google Sheets (background)
+            sync_seller(current_user.id)
             return redirect(url_for('seller.dashboard'))
 
     kategori_list = Kategori.get_all()
@@ -236,4 +241,6 @@ def hapus_produk(produk_id):
     else:
         Produk.delete(produk_id)
         flash(f'Produk "{produk.nama}" berhasil dihapus', 'success')
+        # Auto-sync ke Google Sheets (background)
+        sync_seller(current_user.id)
     return redirect(url_for('seller.dashboard'))

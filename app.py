@@ -48,12 +48,14 @@ def create_app():
     from routes.admin import admin_bp
     from routes.seller import seller_bp
     from routes.api import api_bp
+    from routes.n8n_api import n8n_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(seller_bp)
     app.register_blueprint(api_bp)
+    app.register_blueprint(n8n_bp)  # Endpoint integrasi n8n
 
     # Custom Jinja2 filter untuk strftime
     @app.template_filter('strftime')

@@ -17,3 +17,8 @@ KNN_N_NEIGHBORS = 10
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 GEMINI_MODEL = 'gemini-flash-latest'
 AI_ENABLED = bool(GEMINI_API_KEY)   # Otomatis aktif jika API key tersedia
+
+# ============ GOOGLE SHEETS CONFIG (untuk auto-sync chatbot n8n) ============
+# Salin ID dari URL Google Sheet: https://docs.google.com/spreadsheets/d/ID_INI/edit
+# Lalu set: set GSHEET_SPREADSHEET_ID=ID_SHEET_KAMU
+GSHEET_SPREADSHEET_ID = os.environ.get('GSHEET_SPREADSHEET_ID', '')
