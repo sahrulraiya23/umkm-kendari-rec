@@ -11,12 +11,9 @@ NCF_MODEL_PATH = os.path.join(BASE_DIR, 'recommendation', 'saved_model', 'ncf_mo
 NCF_MIN_RATINGS = 3  # Minimum rating sebelum menggunakan NCF
 KNN_N_NEIGHBORS = 10
 
-# ============ GEMINI AI CONFIG ============
-# Dapatkan API Key gratis di: https://aistudio.google.com/apikey
-# Lalu set environment variable: set GEMINI_API_KEY=AIza...
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
-GEMINI_MODEL = 'gemini-flash-latest'
-AI_ENABLED = bool(GEMINI_API_KEY)   # Otomatis aktif jika API key tersedia
+# ============ CHATBOT CONFIG ============
+# Chatbot memakai rule-based sederhana, sehingga tidak membutuhkan API key.
+AI_ENABLED = True
 
 # ============ GOOGLE SHEETS CONFIG (untuk auto-sync chatbot n8n) ============
 # Salin ID dari URL Google Sheet: https://docs.google.com/spreadsheets/d/ID_INI/edit

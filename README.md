@@ -21,7 +21,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/TensorFlow-2.18.0-FF6F00?style=flat-square&logo=tensorflow&logoColor=white" />
-  <img src="https://img.shields.io/badge/Gemini%20AI-0.8.3-4285F4?style=flat-square&logo=google&logoColor=white" />
+  <img src="https://img.shields.io/badge/Rule--Based%20Chatbot-Simple-4285F4?style=flat-square" />
   <img src="https://img.shields.io/badge/n8n-Automation-E03C2A?style=flat-square&logo=n8n&logoColor=white" />
   <img src="https://img.shields.io/badge/Google%20Sheets-Sync-34A853?style=flat-square&logo=googlesheets&logoColor=white" />
 </p>
@@ -44,7 +44,7 @@ Sistem ini menggabungkan dua algoritma rekomendasi:
 - **KNN (K-Nearest Neighbor)** — untuk pengguna baru (*cold-start*)
 - **NCF (Neural Collaborative Filtering)** — setelah pengguna memberikan rating
 
-Dilengkapi dengan **chatbot AI (Gemini)**, **integrasi n8n**, dan **sinkronisasi otomatis ke Google Sheets**.
+Dilengkapi dengan **chatbot rule-based sederhana**, **integrasi n8n**, dan **sinkronisasi otomatis ke Google Sheets**.
 
 > *"Teknologi untuk memberdayakan ekonomi lokal Kendari."* 🏝️
 
@@ -68,8 +68,8 @@ Dua algoritma bekerja bersama: KNN untuk pengguna baru dan Neural Collaborative 
 </td>
 <td width="50%">
 
-### 💬 Chatbot AI (Gemini)
-Asisten virtual berbasis Google Gemini AI yang membantu pengguna menemukan produk UMKM melalui percakapan natural.
+### 💬 Chatbot Rule-Based
+Asisten virtual sederhana berbasis aturan yang membantu pengguna menemukan produk, mengecek harga, stok, kategori, dan jadwal operasional tanpa API eksternal.
 
 </td>
 </tr>
@@ -131,7 +131,7 @@ UI bersih dan ramah pengguna berbasis HTML5 + CSS3 + Jinja2, dapat diakses dari 
  ┃   ┣ 📄 api.py               ← REST API internal
  ┃   ┗ 📄 n8n_api.py           ← API endpoint khusus integrasi n8n
  ┃
- ┣ 📂 services/                ← Layanan eksternal (Gemini AI, GSheets)
+ ┣ 📂 services/                ← Layanan chatbot rule-based & GSheets
  ┃
  ┣ 📂 static/                  ← CSS · JS · Gambar & aset statis
  ┃   ┗ 📂 uploads/             ← Foto produk (diabaikan Git, hanya .gitkeep)
@@ -189,13 +189,11 @@ Buat file `.env` atau set variabel berikut di terminal:
 ```bash
 # Windows (PowerShell)
 $env:SECRET_KEY       = "ganti-dengan-secret-key-acak"
-$env:GEMINI_API_KEY   = "AIza..."        # Dapatkan di aistudio.google.com/apikey
 $env:GSHEET_SPREADSHEET_ID = "1BxiM..."  # ID dari URL Google Sheets
 $env:N8N_API_KEY      = "key-rahasia-n8n"
 
 # Linux / macOS
 export SECRET_KEY="ganti-dengan-secret-key-acak"
-export GEMINI_API_KEY="AIza..."
 export GSHEET_SPREADSHEET_ID="1BxiM..."
 export N8N_API_KEY="key-rahasia-n8n"
 ```
@@ -240,7 +238,7 @@ http://localhost:5000
 |:---:|:---:|:---|
 | 🖥️ **Backend** | `Python 3.10+` · `Flask 3.1` | Server & logika aplikasi |
 | 🧠 **Rec Engine** | `scikit-learn` · `TensorFlow 2.18` · `Keras` | KNN & Neural Collaborative Filtering |
-| 🤖 **AI Chatbot** | `Google Gemini AI` (`google-generativeai`) | Chatbot percakapan natural |
+| 🤖 **Chatbot** | `Rule-based Python` | Tanya jawab sederhana tanpa API eksternal |
 | 🗄️ **Database** | `SQLite` | Penyimpanan data UMKM, user, rating |
 | 📊 **Spreadsheet** | `gspread` · `Google Sheets API` | Sinkronisasi data produk otomatis |
 | 🔗 **Automation** | `n8n` REST API | WhatsApp/Telegram bot & workflow otomatis |
@@ -272,7 +270,7 @@ Query param: ?api_key=<N8N_API_KEY>
 | `GET` | `/n8n/produk` | Ambil semua produk (support: `?limit`, `?offset`, `?kategori`, `?tersedia`) |
 | `GET` | `/n8n/produk/cari?q=keyword` | Cari produk berdasarkan keyword |
 | `GET` | `/n8n/statistik` | Ringkasan statistik (total produk, UMKM, ulasan) |
-| `POST` | `/n8n/chat` | Chatbot AI — body: `{"message": "...", "user_id": "..."}` |
+| `POST` | `/n8n/chat` | Chatbot rule-based — body: `{"message": "...", "user_id": "..."}` |
 | `POST` | `/n8n/sync-trigger` | Trigger sync & return data siap tulis ke Google Sheets |
 
 <br/>

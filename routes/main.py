@@ -7,6 +7,7 @@ from recommendation.engine import get_recommendations
 from datetime import datetime
 from config import AI_ENABLED
 import re
+import uuid
 
 main_bp = Blueprint('main', __name__)
 
@@ -201,7 +202,7 @@ def chatbot_page():
 
 @main_bp.route('/api/chat', methods=['POST'])
 def chat_api():
-    """API chatbot rekomendasi (Full Gemini)."""
+    """API chatbot rekomendasi rule-based."""
     data = request.get_json()
     message = data.get('message', '').strip().lower() if data else ''
 
@@ -210,19 +211,24 @@ def chat_api():
 
     if not AI_ENABLED:
         return jsonify({
-            'reply': 'Maaf, fitur AI saat ini sedang dinonaktifkan (API Key belum diatur).',
+            'reply': 'Maaf, fitur chatbot saat ini sedang dinonaktifkan.',
             'products': []
         })
 
     try:
         from services.ai_chat import get_ai_response
-        ai_reply = get_ai_response(message)
+        if 'chatbot_conversation_id' not in session:
+            session['chatbot_conversation_id'] = str(uuid.uuid4())
+        ai_reply = get_ai_response(
+            message,
+            conversation_id=session['chatbot_conversation_id']
+        )
         return jsonify({'reply': ai_reply, 'products': []})
 
     except Exception as e:
-        print(f'[Chatbot AI Error] {e}')
+        print(f'[Chatbot Error] {e}')
         return jsonify({
-            'reply': 'Maaf, asisten AI sedang mengalami gangguan. Silakan coba lagi nanti.',
+            'reply': 'Maaf, chatbot sedang mengalami gangguan. Silakan coba lagi nanti.',
             'products': []
         })
 
