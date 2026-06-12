@@ -23,16 +23,21 @@ NCF_MAPPINGS_PATH = os.path.join(os.path.dirname(__file__), 'ncf_mappings.json')
 
 # ── Negative Sampling ──────────────────────────────────────────────────────────
 
-def prepare_bpr_pairs(ratings_data, n_negatives=4):
+def prepare_bpr_pairs(ratings_data, n_negatives=8):
     """
     Buat BPR training pairs: (user, item_positif, item_negatif).
 
     Untuk setiap rating positif, sample n_negatives item yang belum pernah
     dirating user tersebut sebagai negatif.
 
+    Weighted sampling berdasarkan score:
+    - Score 5 → 3 kali lebih banyak pairs (sinyal paling kuat)
+    - Score 4 → 2 kali pairs
+    - Score 1–3 → 1 kali pairs
+
     Args:
         ratings_data : list of dict {'user_id', 'produk_id', 'score'}
-        n_negatives  : jumlah negatif per positif (default 4)
+        n_negatives  : jumlah negatif per positif (default 8)
 
     Returns:
         tuple: (users_pos, items_pos, users_neg, items_neg) — semua list int index
@@ -50,22 +55,33 @@ def prepare_bpr_pairs(ratings_data, n_negatives=4):
     users_pos, items_pos, users_neg, items_neg = [], [], [], []
 
     for r in ratings_data:
-        uid = r['user_id']
-        pid = r['produk_id']
+        uid   = r['user_id']
+        pid   = r['produk_id']
+        score = r.get('score', 3)
+
+        # Weighted repetition berdasarkan score:
+        # score 5 → 3 kali, score 4 → 2 kali, lainnya → 1 kali
+        if score >= 5:
+            repeat = 3
+        elif score >= 4:
+            repeat = 2
+        else:
+            repeat = 1
 
         # Kandidat negatif: produk yang belum dirating user ini
         neg_candidates = [p for p in all_produk if p not in rated_per_user[uid]]
         if not neg_candidates:
             continue
 
-        n_sample = min(n_negatives, len(neg_candidates))
-        sampled  = np.random.choice(neg_candidates, size=n_sample, replace=False)
+        for _ in range(repeat):
+            n_sample = min(n_negatives, len(neg_candidates))
+            sampled  = np.random.choice(neg_candidates, size=n_sample, replace=False)
 
-        for neg_pid in sampled:
-            users_pos.append(uid)
-            items_pos.append(pid)
-            users_neg.append(uid)
-            items_neg.append(neg_pid)
+            for neg_pid in sampled:
+                users_pos.append(uid)
+                items_pos.append(pid)
+                users_neg.append(uid)
+                items_neg.append(neg_pid)
 
     return users_pos, items_pos, users_neg, items_neg
 
@@ -76,8 +92,9 @@ def build_ncf_model(n_users, n_products, embedding_dim=32):
     """
     Bangun model NCF dengan BPR loss (GMF — dot product).
 
-    Embedding dim dikecilkan ke 32 karena data relatif kecil.
-    Arsitektur lebih sederhana (tanpa MLP) agar tidak overfit.
+    Embedding dim 32 optimal untuk dataset > 500 rating:
+    cukup ekspresif untuk menangkap pola preferensi tanpa overfit.
+    Arsitektur GMF sederhana (tanpa MLP) tetap dipertahankan.
 
     Input saat training : [user_idx, pos_item_idx, neg_item_idx]
     Output              : sigmoid(score_pos - score_neg) → target selalu 1
@@ -102,7 +119,8 @@ def build_ncf_model(n_users, n_products, embedding_dim=32):
     pos_input  = keras.Input(shape=(1,), name='pos_input')
     neg_input  = keras.Input(shape=(1,), name='neg_input')
 
-    # Shared embedding layers
+    # Shared embedding layers — l2 0.001 memberikan regularisasi cukup tanpa terlalu
+    # menghambat representasi embedding pada dataset kecil
     user_emb_layer = layers.Embedding(
         n_users, embedding_dim,
         embeddings_regularizer=tf.keras.regularizers.l2(0.001),
@@ -118,7 +136,7 @@ def build_ncf_model(n_users, n_products, embedding_dim=32):
     pos_vec  = layers.Flatten()(item_emb_layer(pos_input))    # (batch, emb_dim)
     neg_vec  = layers.Flatten()(item_emb_layer(neg_input))    # (batch, emb_dim)
 
-    # Score = dot product (GMF)
+    # Score = dot product (GMF) — arsitektur tidak berubah
     pos_score = layers.Dot(axes=1, name='pos_score')([user_vec, pos_vec])  # (batch, 1)
     neg_score = layers.Dot(axes=1, name='neg_score')([user_vec, neg_vec])  # (batch, 1)
 
@@ -142,7 +160,7 @@ def build_ncf_model(n_users, n_products, embedding_dim=32):
 
 # ── Training ───────────────────────────────────────────────────────────────────
 
-def train_ncf_model(ratings_data, epochs=100):
+def train_ncf_model(ratings_data, epochs=200):
     """
     Training model NCF-BPR dengan data rating dari database.
 
@@ -187,8 +205,9 @@ def train_ncf_model(ratings_data, epochs=100):
     n_products = len(produk_ids)
 
     # ── BPR Pairs ──────────────────────────────────────────────────────────────
+    # n_negatives=16 untuk kontras BPR lebih kuat pada dataset > 500 rating
     users_pos, items_pos, users_neg, items_neg = prepare_bpr_pairs(
-        ratings_data, n_negatives=4
+        ratings_data, n_negatives=16
     )
 
     if not users_pos:
@@ -210,15 +229,15 @@ def train_ncf_model(ratings_data, epochs=100):
     callbacks = [
         EarlyStopping(
             monitor='loss',
-            patience=10,
+            patience=20,           # Lebih sabar agar model tidak berhenti prematur
             restore_best_weights=True,
             verbose=0
         ),
         ReduceLROnPlateau(
             monitor='loss',
             factor=0.5,
-            patience=5,
-            min_lr=1e-5,
+            patience=10,
+            min_lr=1e-6,
             verbose=0
         )
     ]
@@ -227,7 +246,7 @@ def train_ncf_model(ratings_data, epochs=100):
         [u_arr, p_arr, n_arr],
         targets,
         epochs=epochs,
-        batch_size=32,
+        batch_size=64,             # Lebih besar untuk dataset > 500 rating
         callbacks=callbacks,
         verbose=0
     )
@@ -335,7 +354,8 @@ def _get_embedding_scores(model, user_idx, produk_indices):
     return scores
 
 
-def ncf_recommend(user_id, all_produk_ids, rated_produk_ids, n_recommendations=8):
+def ncf_recommend(user_id, all_produk_ids, rated_produk_ids,
+                  n_recommendations=8, item_rating_counts=None, item_popularity=None):
     """
     Rekomendasikan produk menggunakan NCF-BPR.
 
@@ -344,13 +364,16 @@ def ncf_recommend(user_id, all_produk_ids, rated_produk_ids, n_recommendations=8
     2. Cek user ada di training data → jika tidak, trigger retrain & return []
     3. Filter produk belum dirating & ada di mappings
     4. Hitung score via dot product embeddings
-    5. Return top-N produk
+    5. Hybrid scoring: item tanpa training signal diblend dengan popularity
+    6. Return top-N produk
 
     Args:
-        user_id          : ID user (int/str)
-        all_produk_ids   : semua produk_id di database
-        rated_produk_ids : produk_id yang sudah dirating user (set/list)
-        n_recommendations: jumlah rekomendasi (default 8)
+        user_id           : ID user (int/str)
+        all_produk_ids    : semua produk_id di database
+        rated_produk_ids  : produk_id yang sudah dirating user (set/list)
+        n_recommendations : jumlah rekomendasi (default 8)
+        item_rating_counts: dict {produk_id: jumlah_rating} untuk hybrid scoring
+        item_popularity   : dict {produk_id: total_rating} untuk fallback
 
     Returns:
         list of produk_ids yang direkomendasikan (kosong jika gagal → fallback ke KNN)
@@ -395,8 +418,24 @@ def ncf_recommend(user_id, all_produk_ids, rated_produk_ids, n_recommendations=8
 
     produk_indices = [produk_to_idx[str(pid)] for pid in candidates]
 
-    # Hitung scores
-    scores = _get_embedding_scores(model, user_idx, produk_indices)
+    # Hitung scores NCF
+    ncf_scores = _get_embedding_scores(model, user_idx, produk_indices)
+
+    # Hybrid scoring: item dengan < 2 training ratings punya embedding random
+    # → blend dengan popularity agar tidak mengacak ranking
+    if item_rating_counts and item_popularity:
+        max_pop = max(item_popularity.values()) if item_popularity else 1
+        hybrid_scores = np.zeros(len(candidates))
+        for i, (pid, ncf_s) in enumerate(zip(candidates, ncf_scores)):
+            train_count = item_rating_counts.get(str(pid), item_rating_counts.get(pid, 0))
+            if train_count >= 2:
+                hybrid_scores[i] = ncf_s
+            else:
+                pop_score = item_popularity.get(pid, item_popularity.get(str(pid), 0)) / max_pop
+                hybrid_scores[i] = 0.3 * ncf_s + 0.7 * pop_score
+        scores = hybrid_scores
+    else:
+        scores = ncf_scores
 
     # Sort descending → ambil top-N
     sorted_idx    = np.argsort(scores)[::-1]

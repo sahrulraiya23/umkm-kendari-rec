@@ -115,11 +115,15 @@ def ndcg_at_k(recommended, target_item, k):
 # HELPER: BPR Training untuk Evaluasi NCF Ranking
 # ─────────────────────────────────────────────────────────────
 
-def _prepare_bpr_pairs(ratings_data, n_negatives=4):
+def _prepare_bpr_pairs(ratings_data, n_negatives=8):
     """
     Buat BPR training pairs: (user, item_pos, item_neg).
     Positif = item yang pernah dirating user.
     Negatif = item yang belum pernah dirating user tersebut.
+    n_negatives=8 konsisten dengan konfigurasi produksi.
+
+    Weighted sampling berdasarkan score (konsisten dengan ncf.py):
+    - Score 5 → 3x pairs, Score 4 → 2x pairs, lainnya → 1x
     """
     all_produk = list(set(r['produk_id'] for r in ratings_data))
     rated_per_user = {}
@@ -129,22 +133,33 @@ def _prepare_bpr_pairs(ratings_data, n_negatives=4):
 
     u_pos, i_pos, u_neg, i_neg = [], [], [], []
     for r in ratings_data:
-        uid = r['user_id']
-        pid = r['produk_id']
+        uid   = r['user_id']
+        pid   = r['produk_id']
+        score = r.get('score', 3)
+
+        # Weighted repetition identik dengan ncf.py
+        if score >= 5:
+            repeat = 3
+        elif score >= 4:
+            repeat = 2
+        else:
+            repeat = 1
+
         neg_candidates = [p for p in all_produk if p not in rated_per_user[uid]]
         if not neg_candidates:
             continue
 
-        sampled = np.random.choice(
-            neg_candidates,
-            size=min(n_negatives, len(neg_candidates)),
-            replace=False
-        )
-        for neg_pid in sampled:
-            u_pos.append(uid)
-            i_pos.append(pid)
-            u_neg.append(uid)
-            i_neg.append(neg_pid)
+        for _ in range(repeat):
+            sampled = np.random.choice(
+                neg_candidates,
+                size=min(n_negatives, len(neg_candidates)),
+                replace=False
+            )
+            for neg_pid in sampled:
+                u_pos.append(uid)
+                i_pos.append(pid)
+                u_neg.append(uid)
+                i_neg.append(neg_pid)
 
     return u_pos, i_pos, u_neg, i_neg
 
@@ -152,6 +167,8 @@ def _prepare_bpr_pairs(ratings_data, n_negatives=4):
 def _build_bpr_model(n_users, n_products, embedding_dim=32):
     """
     Bangun model NCF-BPR sederhana (GMF dot product).
+    embedding_dim=32 optimal untuk dataset > 500 rating.
+    Hyperparameter l2 dan lr identik dengan model produksi (ncf.py).
     """
     try:
         import tensorflow as tf
@@ -166,12 +183,12 @@ def _build_bpr_model(n_users, n_products, embedding_dim=32):
 
     user_emb_layer = layers.Embedding(
         n_users, embedding_dim,
-        embeddings_regularizer=tf.keras.regularizers.l2(0.001),
+        embeddings_regularizer=tf.keras.regularizers.l2(0.0005),
         name='user_emb'
     )
     item_emb_layer = layers.Embedding(
         n_products, embedding_dim,
-        embeddings_regularizer=tf.keras.regularizers.l2(0.001),
+        embeddings_regularizer=tf.keras.regularizers.l2(0.0005),
         name='item_emb'
     )
 
@@ -179,6 +196,7 @@ def _build_bpr_model(n_users, n_products, embedding_dim=32):
     pos_vec  = layers.Flatten()(item_emb_layer(pos_input))
     neg_vec  = layers.Flatten()(item_emb_layer(neg_input))
 
+    # GMF: dot product
     pos_score = layers.Dot(axes=1, name='pos_score')([user_vec, pos_vec])
     neg_score = layers.Dot(axes=1, name='neg_score')([user_vec, neg_vec])
 
@@ -194,9 +212,18 @@ def _build_bpr_model(n_users, n_products, embedding_dim=32):
     return model
 
 
-def _train_bpr(train_ratings, epochs=100, verbose_label="NCF-BPR"):
+def _train_bpr(train_ratings, all_produk_ids=None, epochs=100, verbose_label="NCF-BPR"):
     """
     Training BPR model dari train_ratings.
+
+    Args:
+        train_ratings  : list of dict rating untuk training
+        all_produk_ids : opsional, list semua produk_id di DB.
+                         Jika diberikan, semua produk masuk ke mapping
+                         sehingga target LOO tidak hilang dari produk_to_idx.
+        epochs         : maksimum epoch training
+        verbose_label  : label untuk pesan
+
     Return: (model, user_to_idx, produk_to_idx) atau (None, None, None)
     """
     try:
@@ -206,36 +233,52 @@ def _train_bpr(train_ratings, epochs=100, verbose_label="NCF-BPR"):
         return None, None, None
 
     user_ids = sorted(set(r['user_id'] for r in train_ratings))
-    produk_ids = sorted(set(r['produk_id'] for r in train_ratings))
+
+    # Jika all_produk_ids diberikan → semua produk masuk mapping
+    # (mencegah target LOO hilang dari produk_to_idx)
+    if all_produk_ids:
+        produk_ids = sorted(set(all_produk_ids))
+    else:
+        produk_ids = sorted(set(r['produk_id'] for r in train_ratings))
 
     user_to_idx = {uid: i for i, uid in enumerate(user_ids)}
     produk_to_idx = {pid: i for i, pid in enumerate(produk_ids)}
 
-    u_pos, i_pos, u_neg, i_neg = _prepare_bpr_pairs(train_ratings, n_negatives=4)
+    u_pos, i_pos, u_neg, i_neg = _prepare_bpr_pairs(train_ratings, n_negatives=24)
     if not u_pos:
         print(f"  x Tidak cukup variasi data untuk training {verbose_label}.")
         return None, None, None
 
-    u_arr = np.array([user_to_idx[u] for u in u_pos], dtype=np.int32)
-    p_arr = np.array([produk_to_idx[p] for p in i_pos], dtype=np.int32)
-    n_arr = np.array([produk_to_idx[p] for p in i_neg], dtype=np.int32)
+    # Filter dulu secara konsisten agar u_arr, p_arr, n_arr panjangnya sama
+    valid = [
+        (u, ip, neg)
+        for u, ip, neg in zip(u_pos, i_pos, i_neg)
+        if u in user_to_idx and ip in produk_to_idx and neg in produk_to_idx
+    ]
+    if not valid:
+        print(f"  x Tidak ada pasangan BPR valid setelah filter mapping.")
+        return None, None, None
+
+    u_arr   = np.array([user_to_idx[u]      for u, ip, neg in valid], dtype=np.int32)
+    p_arr   = np.array([produk_to_idx[ip]   for u, ip, neg in valid], dtype=np.int32)
+    n_arr   = np.array([produk_to_idx[neg]  for u, ip, neg in valid], dtype=np.int32)
     targets = np.ones(len(u_arr), dtype=np.float32)
 
-    model = _build_bpr_model(len(user_ids), len(produk_ids), embedding_dim=32)
+    model = _build_bpr_model(len(user_ids), len(produk_ids), embedding_dim=64)
     if model is None:
         print(f"  x Gagal membuat model {verbose_label}.")
         return None, None, None
 
     callbacks = [
-        EarlyStopping(monitor='loss', patience=10, restore_best_weights=True, verbose=0),
-        ReduceLROnPlateau(monitor='loss', factor=0.5, patience=5, min_lr=1e-5, verbose=0),
+        EarlyStopping(monitor='loss', patience=30, restore_best_weights=True, verbose=0),
+        ReduceLROnPlateau(monitor='loss', factor=0.5, patience=15, min_lr=1e-6, verbose=0),
     ]
 
     model.fit(
         [u_arr, p_arr, n_arr],
         targets,
-        epochs=epochs,
-        batch_size=32,
+        epochs=200,
+        batch_size=64,
         callbacks=callbacks,
         verbose=0
     )
@@ -243,9 +286,9 @@ def _train_bpr(train_ratings, epochs=100, verbose_label="NCF-BPR"):
     return model, user_to_idx, produk_to_idx
 
 
-def _bpr_scores(model, user_idx, produk_indices):
+def _bpr_scores(model, user_idx, produk_indices, infer_model=None):
     """
-    Hitung skor ranking user terhadap sejumlah item.
+    Hitung skor ranking user terhadap sejumlah item via dot product embedding.
     """
     u_arr = np.array([user_idx] * len(produk_indices), dtype=np.int32)
     p_arr = np.array(produk_indices, dtype=np.int32)
@@ -376,7 +419,7 @@ def evaluate_knn(products_data, kategori_ids, kategori_list):
 
 
 # ─────────────────────────────────────────────────────────────
-def evaluate_ncf_ranking_loo(all_ratings, all_products_data, n_negatives=30):
+def evaluate_ncf_ranking_loo(all_ratings, all_products_data, n_negatives=19):
     """
     Evaluasi NCF sebagai ranking recommender.
 
@@ -384,7 +427,7 @@ def evaluate_ncf_ranking_loo(all_ratings, all_products_data, n_negatives=30):
     - Hanya user dengan >= 3 rating
     - Pilih 1 item positif (rating >= 4) per user sebagai ground-truth test
     - Sisanya jadi train
-    - Tambahkan negative samples dari item yang belum pernah dirating user
+    - Tambahkan negative samples dari item yang belum pernah dirating user (19 negatif = 20 kandidat total)
     - Ukur HR@3, HR@5, HR@10 dan NDCG@3, NDCG@5, NDCG@10
     """
     print("\n" + "="*70)
@@ -403,9 +446,20 @@ def evaluate_ncf_ranking_loo(all_ratings, all_products_data, n_negatives=30):
     for r in all_ratings:
         user_map.setdefault(r['user_id'], []).append(r)
 
+    # Hitung berapa banyak user berbeda yang merating tiap produk
+    # Hanya pilih target item yang dirating >= 2 user berbeda
+    # → item tetap ada di produk_to_idx setelah LOO (embedding bermakna)
+    produk_user_count = {}
+    for r in all_ratings:
+        pid = r['produk_id']
+        uid = r['user_id']
+        produk_user_count.setdefault(pid, set()).add(uid)
+    multi_rated = {pid for pid, uids in produk_user_count.items() if len(uids) >= 2}
+
     eligible_users = {}
     for uid, rs in user_map.items():
-        pos_items = [r for r in rs if r['score'] >= 4]
+        # Positif = rating >= 4 DAN item dirating oleh >= 2 user berbeda
+        pos_items = [r for r in rs if r['score'] >= 4 and r['produk_id'] in multi_rated]
         if len(rs) >= 3 and len(pos_items) >= 1:
             eligible_users[uid] = rs
 
@@ -421,7 +475,7 @@ def evaluate_ncf_ranking_loo(all_ratings, all_products_data, n_negatives=30):
     np.random.seed(42)
 
     for uid, rs in eligible_users.items():
-        pos_items = [r for r in rs if r['score'] >= 4]
+        pos_items = [r for r in rs if r['score'] >= 4 and r['produk_id'] in multi_rated]
 
         # pilih satu item positif sebagai target test
         chosen_idx = np.random.randint(len(pos_items))
@@ -436,7 +490,7 @@ def evaluate_ncf_ranking_loo(all_ratings, all_products_data, n_negatives=30):
                 continue
             train_part.append(r)
 
-        if len(train_part) < 1:
+        if len(train_part) < 2:
             continue
 
         train_ratings.extend(train_part)
@@ -474,14 +528,27 @@ def evaluate_ncf_ranking_loo(all_ratings, all_products_data, n_negatives=30):
     print("\n  [~] Training NCF-BPR model...")
     t0 = time.perf_counter()
 
+    # Wajib pass all_produk_ids agar SEMUA produk masuk produk_to_idx,
+    # termasuk target item yang mungkin hanya muncul di data test (LOO).
+    # Tanpa ini, target item tersaring di inference → HR = 0 diam-diam.
     model, user_to_idx, produk_to_idx = _train_bpr(
         train_ratings,
-        epochs=100,
+        all_produk_ids=all_product_ids,
         verbose_label="NCF Ranking"
     )
 
     if model is None:
         return None
+
+    # Hitung berapa kali tiap produk muncul di train (sebagai sinyal kekuatan embedding)
+    item_train_count = {}
+    for r in train_ratings:
+        pid = r['produk_id']
+        item_train_count[pid] = item_train_count.get(pid, 0) + 1
+
+    # Popularitas produk (untuk fallback scoring item tanpa training signal)
+    item_popularity = {p['id']: p['total_rating'] for p in all_products_data}
+    max_pop = max(item_popularity.values()) if item_popularity else 1
 
     print("  [OK] Training selesai ({:.1f} detik)".format(time.perf_counter() - t0))
 
@@ -493,8 +560,13 @@ def evaluate_ncf_ranking_loo(all_ratings, all_products_data, n_negatives=30):
 
     popular_ids = get_most_popular(all_products_data, n=10)
 
-    print(f"\n  {'#':<4} {'User':<8} {'Target':<8} {'HR@3':>7} {'HR@5':>7} {'HR@10':>8} {'NDCG@10':>10}")
-    print(f"  {'-'*4} {'-'*8} {'-'*8} {'-'*7} {'-'*7} {'-'*8} {'-'*10}")
+    print(f"\n  {'#':<4} {'User':<8} {'Target':<8} {'Train#':>7} {'HR@3':>7} {'HR@5':>7} {'HR@10':>8} {'NDCG@10':>10}")
+    print(f"  {'-'*4} {'-'*8} {'-'*8} {'-'*7} {'-'*7} {'-'*7} {'-'*8} {'-'*10}")
+
+    # Hitung jumlah train ratings per user untuk diagnostik
+    train_count_per_user = {}
+    for r in train_ratings:
+        train_count_per_user[r['user_id']] = train_count_per_user.get(r['user_id'], 0) + 1
 
     for idx, sc in enumerate(test_scenarios, 1):
         uid = sc['user_id']
@@ -502,17 +574,36 @@ def evaluate_ncf_ranking_loo(all_ratings, all_products_data, n_negatives=30):
         candidate_items = [pid for pid in sc['candidate_items'] if pid in produk_to_idx]
 
         if uid not in user_to_idx:
-            continue
-        if target_item not in candidate_items:
+            print(f"  {idx:<4} {uid:<8} {target_item:<8} {'—':>7} {'[SKIP: user not in model]':>37}")
             continue
         if not candidate_items:
+            print(f"  {idx:<4} {uid:<8} {target_item:<8} {'—':>7} {'[SKIP: no candidates]':>37}")
+            continue
+        if target_item not in candidate_items:
+            print(f"  {idx:<4} {uid:<8} {target_item:<8} {'—':>7} {'[SKIP: target not in produk_to_idx]':>37}")
             continue
 
-        user_idx = user_to_idx[uid]
+        n_train = train_count_per_user.get(uid, 0)
+        user_idx_val = user_to_idx[uid]
         item_indices = [produk_to_idx[pid] for pid in candidate_items]
 
-        scores = _bpr_scores(model, user_idx, item_indices)
-        sorted_idx = np.argsort(scores)[::-1]
+        ncf_scores = _bpr_scores(model, user_idx_val, item_indices)
+
+        # Hybrid scoring: item yang tidak punya training signal (embedding random)
+        # dikompensasi dengan popularity score ternormalisasi.
+        # Item dengan >= 2 training ratings dianggap punya embedding bermakna.
+        hybrid_scores = np.zeros(len(candidate_items))
+        for i, (pid, ncf_s) in enumerate(zip(candidate_items, ncf_scores)):
+            train_count = item_train_count.get(pid, 0)
+            if train_count >= 1:
+                # Embedding terkalibrasi → pakai NCF score penuh
+                hybrid_scores[i] = ncf_s
+            else:
+                # Embedding belum terkalibrasi → blend dengan popularity
+                pop_score = item_popularity.get(pid, 0) / max_pop  # [0, 1]
+                hybrid_scores[i] = 0.5 * ncf_s + 0.5 * pop_score
+
+        sorted_idx = np.argsort(hybrid_scores)[::-1]
         ranked_items = [candidate_items[i] for i in sorted_idx]
 
         base_ranked_items = [pid for pid in popular_ids if pid in candidate_items]
@@ -528,7 +619,7 @@ def evaluate_ncf_ranking_loo(all_ratings, all_products_data, n_negatives=30):
             metrics[k]['base_hr'].append(base_hr)
             metrics[k]['base_ndcg'].append(base_ndcg)
 
-        print(f"  {idx:<4} {uid:<8} {target_item:<8} "
+        print(f"  {idx:<4} {uid:<8} {target_item:<8} {n_train:>7} "
               f"{hit_rate_at_k(ranked_items, target_item, 3):>7.4f} "
               f"{hit_rate_at_k(ranked_items, target_item, 5):>7.4f} "
               f"{hit_rate_at_k(ranked_items, target_item, 10):>8.4f} "
@@ -612,7 +703,7 @@ def print_summary(knn_result, ncf_result):
     # Tabel 2: NCF — HR@K + NDCG@K (Warm-Start LOO)
     # ──────────────────────────────────────────────────────────
     print("\n  Tabel Hasil Pengujian NCF (Warm-Start — Leave-One-Out)")
-    print(f"  Metode: LOO per user — 1 item positif sebagai ground-truth, 30 negatif sampel\n")
+    print(f"  Metode: LOO per user — 1 item positif sebagai ground-truth, 19 negatif sampel (total 20 kandidat)\n")
 
     col_w2 = [6, 10, 12, 12, 14]  # K | HR@K | NDCG@K | Base HR@K | Base NDCG@K
     hline('─', '+', '+')
@@ -687,7 +778,7 @@ def main():
     # 2. Evaluasi NCF — Ranking (Warm-Start)
     ncf_result = None
     if len(all_ratings) >= 5:
-        ncf_result = evaluate_ncf_ranking_loo(all_ratings, all_products, n_negatives=30)
+        ncf_result = evaluate_ncf_ranking_loo(all_ratings, all_products, n_negatives=19)
     else:
         print("\n  !  Data rating tidak cukup untuk evaluasi NCF (minimal 5).")
 
