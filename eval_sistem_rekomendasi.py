@@ -164,11 +164,12 @@ def _prepare_bpr_pairs(ratings_data, n_negatives=8):
     return u_pos, i_pos, u_neg, i_neg
 
 
-def _build_bpr_model(n_users, n_products, embedding_dim=32):
+def _build_bpr_model(n_users, n_products, embedding_dim=128):
     """
     Bangun model NCF-BPR sederhana (GMF dot product).
-    embedding_dim=32 optimal untuk dataset > 500 rating.
-    Hyperparameter l2 dan lr identik dengan model produksi (ncf.py).
+    embedding_dim=128 memberikan representasi lebih ekspresif.
+    L2 dikecilkan ke 0.00005 agar model tidak terlalu under-fit
+    pada dataset kecil-menengah.
     """
     try:
         import tensorflow as tf
@@ -181,14 +182,15 @@ def _build_bpr_model(n_users, n_products, embedding_dim=32):
     pos_input  = keras.Input(shape=(1,), name='pos_input')
     neg_input  = keras.Input(shape=(1,), name='neg_input')
 
+    # L2 dikecilkan: regularisasi agresif menyebabkan underfitting pada dataset kecil
     user_emb_layer = layers.Embedding(
         n_users, embedding_dim,
-        embeddings_regularizer=tf.keras.regularizers.l2(0.0005),
+        embeddings_regularizer=tf.keras.regularizers.l2(0.00005),
         name='user_emb'
     )
     item_emb_layer = layers.Embedding(
         n_products, embedding_dim,
-        embeddings_regularizer=tf.keras.regularizers.l2(0.0005),
+        embeddings_regularizer=tf.keras.regularizers.l2(0.00005),
         name='item_emb'
     )
 
@@ -196,7 +198,7 @@ def _build_bpr_model(n_users, n_products, embedding_dim=32):
     pos_vec  = layers.Flatten()(item_emb_layer(pos_input))
     neg_vec  = layers.Flatten()(item_emb_layer(neg_input))
 
-    # GMF: dot product
+    # GMF: dot product (arsitektur tidak berubah)
     pos_score = layers.Dot(axes=1, name='pos_score')([user_vec, pos_vec])
     neg_score = layers.Dot(axes=1, name='neg_score')([user_vec, neg_vec])
 
@@ -205,7 +207,7 @@ def _build_bpr_model(n_users, n_products, embedding_dim=32):
 
     model = keras.Model(inputs=[user_input, pos_input, neg_input], outputs=output)
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.005),
         loss='binary_crossentropy',
         metrics=['accuracy']
     )
@@ -244,7 +246,8 @@ def _train_bpr(train_ratings, all_produk_ids=None, epochs=100, verbose_label="NC
     user_to_idx = {uid: i for i, uid in enumerate(user_ids)}
     produk_to_idx = {pid: i for i, pid in enumerate(produk_ids)}
 
-    u_pos, i_pos, u_neg, i_neg = _prepare_bpr_pairs(train_ratings, n_negatives=24)
+    # n_negatives=48: lebih banyak pasangan kontrastif = sinyal BPR lebih kuat
+    u_pos, i_pos, u_neg, i_neg = _prepare_bpr_pairs(train_ratings, n_negatives=48)
     if not u_pos:
         print(f"  x Tidak cukup variasi data untuk training {verbose_label}.")
         return None, None, None
@@ -264,21 +267,24 @@ def _train_bpr(train_ratings, all_produk_ids=None, epochs=100, verbose_label="NC
     n_arr   = np.array([produk_to_idx[neg]  for u, ip, neg in valid], dtype=np.int32)
     targets = np.ones(len(u_arr), dtype=np.float32)
 
-    model = _build_bpr_model(len(user_ids), len(produk_ids), embedding_dim=64)
+    # embedding_dim=128 sesuai dengan _build_bpr_model default baru
+    model = _build_bpr_model(len(user_ids), len(produk_ids), embedding_dim=128)
     if model is None:
         print(f"  x Gagal membuat model {verbose_label}.")
         return None, None, None
 
     callbacks = [
-        EarlyStopping(monitor='loss', patience=30, restore_best_weights=True, verbose=0),
-        ReduceLROnPlateau(monitor='loss', factor=0.5, patience=15, min_lr=1e-6, verbose=0),
+        # patience=60: biarkan training berlanjut lebih lama sebelum berhenti
+        EarlyStopping(monitor='loss', patience=60, restore_best_weights=True, verbose=0),
+        # factor=0.3: LR turun lebih cepat saat plateau
+        ReduceLROnPlateau(monitor='loss', factor=0.3, patience=20, min_lr=1e-7, verbose=0),
     ]
 
     model.fit(
         [u_arr, p_arr, n_arr],
         targets,
-        epochs=200,
-        batch_size=64,
+        epochs=500,          # lebih banyak epoch, early stopping yang mengontrol
+        batch_size=32,       # batch lebih kecil = lebih banyak gradient updates per epoch
         callbacks=callbacks,
         verbose=0
     )
