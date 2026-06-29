@@ -120,7 +120,7 @@
                            onchange="previewImage(this)">
                     {% if produk and produk.gambar != 'default.jpg' %}
                     <div class="current-image-info">
-                        <img src="{{ url_for('static', filename='uploads/' + produk.gambar) }}"
+                        <img src="{{ url_for('static', filename='uploads/' + (produk.gambar or 'default.jpg')) }}"
                              alt="" style="width:48px; height:48px; border-radius:8px; object-fit:cover;">
                         <span style="font-size:0.85rem; color:var(--text-muted);">Gambar saat ini (kosongkan jika tidak ingin mengubah)</span>
                     </div>

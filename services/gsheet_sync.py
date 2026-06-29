@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 # Ambil config dari environment atau config.py
 # ============================================================
 SPREADSHEET_ID = os.environ.get('GSHEET_SPREADSHEET_ID', '')
-CREDENTIALS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'credentials.json')
+CREDENTIALS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'service_account.json')
 DATABASE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'umkm_kendari.db')
 
 # Sheet per seller: True = buat tab terpisah per UMKM, False = satu sheet semua

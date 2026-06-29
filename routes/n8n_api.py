@@ -4,7 +4,8 @@ API endpoint khusus untuk integrasi dengan n8n.
 
 Endpoint ini memungkinkan:
 1. n8n membaca data produk real-time dari database
-2. n8n mengirim pertanyaan chatbot dan mendapat jawaban rule-based
+2. n8n mengirim pertanyaan chatbot dan mendapat jawaban dari Groq AI
+   (dengan konteks produk asli dari database — bukan ngarang)
 3. n8n melakukan sync data ke Google Sheets otomatis
 4. n8n mendapat notifikasi jika ada perubahan data
 5. n8n memetakan session WAHA → profil UMKM → konteks chatbot
@@ -13,6 +14,10 @@ Alur WAHA → n8n → Flask → chatbot:
   Pesan WA masuk → WAHA kirim session_name → n8n panggil /n8n/umkm-info
   → dapat profil UMKM → n8n panggil /n8n/chat-umkm dengan konteks UMKM tsb
   → chatbot menjawab sesuai UMKM yang sedang aktif
+
+  ATAU untuk chatbot marketplace umum (lintas-UMKM):
+  Pesan WA masuk → n8n panggil /n8n/chat → Flask cari produk relevan
+  di database dulu → konteks dimasukkan ke Groq → jawaban akurat sesuai stok asli.
 
 Semua endpoint menggunakan API Key untuk keamanan dasar.
 """
@@ -33,20 +38,26 @@ n8n_bp = Blueprint('n8n', __name__, url_prefix='/n8n')
 N8N_API_KEY = os.environ.get('N8N_API_KEY', 'umkm-kendari-secret-2024')
 # ============================================================
 
+# Stopwords yang diabaikan saat ekstrak keyword dari pesan WhatsApp.
+# Dipakai bersama oleh cari_produk() dan chat_n8n() (RAG context).
+STOPWORDS = {
+    'cari', 'ada', 'apakah', 'apa', 'yang', 'dong', 'kak', 'mas', 'mbak',
+    'pak', 'bu', 'mau', 'minta', 'ingin', 'pesan', 'beli', 'jual',
+    'produk', 'barang', 'stok', 'harga', 'berapa', 'dimana', 'dari',
+    'untuk', 'dan', 'atau', 'gak', 'ga', 'nggak', 'nih', 'sih', 'deh',
+    'ya', 'oke', 'ok', 'info', 'tanya', 'boleh', 'bisa', 'tolong',
+    'halo', 'hai', 'hi', 'hello', 'pagi', 'siang', 'sore', 'malam',
+}
+
 
 def require_api_key(f):
     """Decorator: Validasi API Key dari header atau query param."""
     @wraps(f)
     def decorated(*args, **kwargs):
-        # Cek dari header Authorization: Bearer <key>
         auth_header = request.headers.get('Authorization', '')
         key_from_header = auth_header.replace('Bearer ', '').strip()
-        
-        # Cek dari query param: ?api_key=xxx
         key_from_query = request.args.get('api_key', '')
-        print("AUTH HEADER:", request.headers.get('Authorization'))
-        print("EXPECTED:", N8N_API_KEY)
-        
+
         if key_from_header != N8N_API_KEY and key_from_query != N8N_API_KEY:
             return jsonify({
                 'success': False,
@@ -54,6 +65,72 @@ def require_api_key(f):
             }), 401
         return f(*args, **kwargs)
     return decorated
+
+
+# ============================================================
+# HELPER: Pencarian produk berdasarkan keyword
+# Dipakai oleh endpoint /n8n/produk/cari (untuk n8n/GSheet)
+# DAN oleh /n8n/chat (sebagai konteks RAG sebelum tanya ke Groq).
+# ============================================================
+def _cari_produk_db(query_input: str, limit: int = 5):
+    """
+    Cari produk di database berdasarkan keyword dalam query_input.
+    Return list of dict produk (sudah siap pakai), urut berdasarkan relevansi.
+    """
+    query_input = (query_input or '').strip()
+    if not query_input:
+        return []
+
+    keywords = [
+        w for w in query_input.lower().split()
+        if w not in STOPWORDS and len(w) > 2
+    ]
+    if not keywords:
+        keywords = [query_input]
+
+    db = get_db()
+    results_map = {}
+
+    for kw in keywords:
+        pattern = f'%{kw}%'
+        rows = db.execute('''
+            SELECT p.id, p.nama, p.deskripsi, p.harga, p.stok, p.tersedia, p.kecamatan,
+                   k.nama AS kategori, u.nama_lengkap, u.no_telepon,
+                   COALESCE(AVG(r.score), 0) AS avg_rating
+            FROM produk p
+            LEFT JOIN kategori k ON p.kategori_id = k.id
+            LEFT JOIN users u ON p.seller_id = u.id
+            LEFT JOIN ratings r ON p.id = r.produk_id
+            WHERE p.nama LIKE ? OR p.deskripsi LIKE ?
+            GROUP BY p.id
+        ''', (pattern, pattern)).fetchall()
+
+        for r in rows:
+            if r['id'] not in results_map:
+                results_map[r['id']] = {'data': r, 'score': 0}
+            results_map[r['id']]['score'] += 1
+
+    sorted_results = sorted(results_map.values(), key=lambda x: x['score'], reverse=True)[:limit]
+
+    hasil = []
+    for item in sorted_results:
+        r = item['data']
+        tersedia = bool(int(r['tersedia']) == 1 and int(r['stok']) > 0)
+        hasil.append({
+            'id': r['id'],
+            'nama_produk': r['nama'],
+            'deskripsi': r['deskripsi'] or '',
+            'harga': int(r['harga']),
+            'harga_format': f"Rp {int(r['harga']):,}".replace(',', '.'),
+            'status_stok': 'Tersedia' if tersedia else 'Habis',
+            'stok': int(r['stok']),
+            'kecamatan': r['kecamatan'] or '-',
+            'kategori': r['kategori'] or '-',
+            'nama_umkm': r['nama_lengkap'] or '-',
+            'telepon': r['no_telepon'] or '-',
+            'rating': round(float(r['avg_rating']), 1),
+        })
+    return hasil
 
 
 # ============================================================
@@ -72,9 +149,9 @@ def ping():
             'GET  /n8n/produk            — semua produk',
             'GET  /n8n/produk/cari       — cari produk (?q=keyword)',
             'GET  /n8n/statistik         — ringkasan statistik',
-            'POST /n8n/chat              — tanya jawab chatbot rule-based (umum)',
-            'GET  /n8n/umkm-info         — profil UMKM by session_name ⭐ BARU',
-            'POST /n8n/chat-umkm         — chat rule-based scoped ke UMKM tsb   ⭐ BARU',
+            'POST /n8n/chat              — chatbot Groq + konteks produk (RAG) ⭐ UPDATE',
+            'GET  /n8n/umkm-info         — profil UMKM by session_name',
+            'POST /n8n/chat-umkm         — chat scoped ke UMKM tsb',
             'POST /n8n/sync-trigger      — trigger sinkronisasi manual',
         ]
     })
@@ -83,25 +160,19 @@ def ping():
 # ============================================================
 # ENDPOINT 2: Ambil Semua Produk (untuk n8n baca ke GSheet)
 # GET /n8n/produk?api_key=xxx
-# GET /n8n/produk?limit=50&offset=0&kategori=Kuliner
 # ============================================================
 @n8n_bp.route('/produk', methods=['GET'])
 @require_api_key
 def get_all_produk():
-    """
-    Kembalikan semua produk dari database.
-    n8n bisa memanggil ini secara terjadwal (misal setiap 1 jam)
-    dan menulis hasilnya ke Google Sheets otomatis.
-    """
     db = get_db()
-    
+
     limit  = request.args.get('limit', 500, type=int)
     offset = request.args.get('offset', 0, type=int)
     kategori = request.args.get('kategori', None)
     hanya_tersedia = request.args.get('tersedia', 'false').lower() == 'true'
-    
+
     query = '''
-        SELECT 
+        SELECT
             p.id,
             p.nama          AS nama_produk,
             p.deskripsi,
@@ -121,25 +192,25 @@ def get_all_produk():
         LEFT JOIN users u    ON p.seller_id = u.id
         LEFT JOIN ratings r  ON p.id = r.produk_id
     '''
-    
+
     conditions = []
     params = []
-    
+
     if kategori:
         conditions.append("k.nama LIKE ?")
         params.append(f'%{kategori}%')
-    
+
     if hanya_tersedia:
         conditions.append("p.tersedia = 1 AND p.stok > 0")
-    
+
     if conditions:
         query += ' WHERE ' + ' AND '.join(conditions)
-    
+
     query += ' GROUP BY p.id ORDER BY u.nama_lengkap, p.created_at DESC'
     query += f' LIMIT {limit} OFFSET {offset}'
-    
+
     rows = db.execute(query, params).fetchall()
-    
+
     produk_list = []
     for r in rows:
         produk_list.append({
@@ -160,7 +231,7 @@ def get_all_produk():
             'created_at': r['created_at'] or '',
             'updated_at': r['updated_at'] or '',
         })
-    
+
     return jsonify({
         'success': True,
         'total': len(produk_list),
@@ -172,90 +243,32 @@ def get_all_produk():
 
 
 # ============================================================
-# ENDPOINT 3: Cari Produk (untuk chatbot n8n)
+# ENDPOINT 3: Cari Produk (untuk n8n / GSheet)
 # GET /n8n/produk/cari?q=kopi&api_key=xxx
+#
+# Sekarang pakai helper _cari_produk_db() yang sama dengan /n8n/chat
 # ============================================================
 @n8n_bp.route('/produk/cari', methods=['GET'])
 @require_api_key
 def cari_produk():
-    """
-    Cari produk dengan memecah pesan menjadi keyword individual dan
-    menggabungkan hasil berdasarkan relevansi.
-    """
     query_input = request.args.get('q', '').strip()
     if not query_input:
         return jsonify({'success': False, 'error': 'Parameter ?q=keyword diperlukan'}), 400
-    
-    # Stopwords yang diabaikan (kata umum dari pesan WhatsApp)
-    STOPWORDS = {
-        'cari', 'ada', 'apakah', 'apa', 'yang', 'dong', 'kak', 'mas', 'mbak',
-        'pak', 'bu', 'mau', 'minta', 'ingin', 'pesan', 'beli', 'jual',
-        'produk', 'barang', 'stok', 'harga', 'berapa', 'dimana', 'dari',
-        'untuk', 'dan', 'atau', 'gak', 'ga', 'nggak', 'nih', 'sih', 'deh',
-        'ya', 'oke', 'ok', 'info', 'tanya', 'boleh', 'bisa', 'tolong',
-        'halo', 'hai', 'hi', 'hello', 'pagi', 'siang', 'sore', 'malam',
-    }
-    
-    keywords = [
-        w for w in query_input.lower().split()
-        if w not in STOPWORDS and len(w) > 2
-    ]
-    if not keywords:
-        keywords = [query_input]
-    
-    db = get_db()
-    results_map = {}
-    
-    for kw in keywords:
-        pattern = f'%{kw}%'
-        rows = db.execute('''
-            SELECT p.id, p.nama, p.harga, p.stok, p.tersedia, p.kecamatan, 
-                   k.nama AS kategori, u.nama_lengkap, u.no_telepon, 
-                   COALESCE(AVG(r.score), 0) AS avg_rating
-            FROM produk p
-            LEFT JOIN kategori k ON p.kategori_id = k.id
-            LEFT JOIN users u ON p.seller_id = u.id
-            LEFT JOIN ratings r ON p.id = r.produk_id
-            WHERE p.nama LIKE ? OR p.deskripsi LIKE ?
-            GROUP BY p.id
-        ''', (pattern, pattern)).fetchall()
-        
-        for r in rows:
-            if r['id'] not in results_map:
-                results_map[r['id']] = {'data': r, 'score': 0}
-            results_map[r['id']]['score'] += 1
-            
-    sorted_results = sorted(results_map.values(), key=lambda x: x['score'], reverse=True)[:10]
-    
-    hasil = []
-    for item in sorted_results:
-        r = item['data']
-        tersedia = bool(int(r['tersedia']) == 1 and int(r['stok']) > 0)
-        hasil.append({
-            'id': r['id'],
-            'nama_produk': r['nama'],
-            'harga_format': f"Rp {int(r['harga']):,}".replace(',', '.'),
-            'status_stok': '✅ Tersedia' if tersedia else '❌ Habis',
-            'stok': int(r['stok']),
-            'kecamatan': r['kecamatan'] or '-',
-            'kategori': r['kategori'] or '-',
-            'nama_umkm': r['nama_lengkap'] or '-',
-            'telepon': r['no_telepon'] or '-',
-            'rating': round(float(r['avg_rating']), 1),
-        })
-    
+
+    hasil = _cari_produk_db(query_input, limit=10)
+
     if hasil:
         teks_ringkasan = f"🔍 Hasil pencarian '{query_input}' ({len(hasil)} produk ditemukan):\n\n"
         for i, p in enumerate(hasil[:5], 1):
             teks_ringkasan += (
                 f"{i}. *{p['nama_produk']}* — {p['harga_format']}\n"
-                f"   {p['status_stok']} | Stok: {p['stok']}\n"
+                f"   {'✅' if p['status_stok'] == 'Tersedia' else '❌'} {p['status_stok']} | Stok: {p['stok']}\n"
                 f"   📍 {p['kecamatan']} | 🏪 {p['nama_umkm']}\n"
                 f"   📞 {p['telepon']}\n\n"
             )
     else:
         teks_ringkasan = f"❌ Produk '{query_input}' tidak ditemukan di katalog UMKM Kendari."
-    
+
     return jsonify({
         'success': True,
         'keyword': query_input,
@@ -272,12 +285,8 @@ def cari_produk():
 @n8n_bp.route('/statistik', methods=['GET'])
 @require_api_key
 def get_statistik():
-    """
-    Ringkasan statistik database.
-    Cocok untuk dashboard n8n atau laporan otomatis ke WA.
-    """
     db = get_db()
-    
+
     total_produk = db.execute("SELECT COUNT(*) as c FROM produk").fetchone()['c']
     produk_tersedia = db.execute(
         "SELECT COUNT(*) as c FROM produk WHERE tersedia=1 AND stok>0"
@@ -287,8 +296,7 @@ def get_statistik():
     ).fetchone()['c']
     total_transaksi = db.execute("SELECT COUNT(*) as c FROM pesanan").fetchone()['c'] if _table_exists(db, 'pesanan') else 0
     total_rating = db.execute("SELECT COUNT(*) as c FROM ratings").fetchone()['c'] if _table_exists(db, 'ratings') else 0
-    
-    # Produk per kategori
+
     per_kategori = db.execute('''
         SELECT k.nama, COUNT(p.id) as jumlah
         FROM produk p
@@ -297,7 +305,7 @@ def get_statistik():
         ORDER BY jumlah DESC
         LIMIT 10
     ''').fetchall()
-    
+
     return jsonify({
         'success': True,
         'updated_at': datetime.now().isoformat(),
@@ -317,53 +325,83 @@ def get_statistik():
 
 
 # ============================================================
-# ENDPOINT 5: Chat rule-based (Chatbot n8n)
+# ENDPOINT 5: Chat dengan Groq + konteks produk (RAG)
 # POST /n8n/chat
 # Body: {"message": "ada produk kopi?", "user_id": "628xxx"}
+#
+# ⭐ UPDATE: sebelum tanya ke Groq, Flask cari dulu produk yang relevan
+# di database berdasarkan keyword di pesan user, lalu hasilnya dimasukkan
+# sebagai system_prompt context. Ini supaya AI jawab dari data ASLI,
+# bukan dari pengetahuan umum/ngarang.
 # ============================================================
 @n8n_bp.route('/chat', methods=['POST'])
 @require_api_key
 def chat_n8n():
     """
-    Endpoint chatbot untuk n8n.
-    n8n mengirim pesan user lalu Flask menjawab memakai aturan sederhana.
-    
-    Cocok untuk integrasi:
-    - WhatsApp via n8n + Twilio/WA Cloud API
-    - Telegram Bot via n8n
-    - Chat widget lainnya
+    Endpoint chatbot marketplace umum (lintas-UMKM) untuk n8n.
     """
     data = request.get_json()
-    
+
     if not data or 'message' not in data:
         return jsonify({
             'success': False,
             'error': "Body JSON harus mengandung field 'message'"
         }), 400
-    
+
     user_message = data.get('message', '').strip()
-    user_id = data.get('user_id', 'anonymous')  # ID WA user atau identifier lain
-    
+    user_id = data.get('user_id', 'anonymous')
+
     if not user_message:
         return jsonify({
             'success': False,
             'error': 'Pesan tidak boleh kosong'
         }), 400
-    
-    # Import service chatbot
+
+    # ── Cari produk relevan di database (RAG context) ──────────────────────
+    produk_ditemukan = _cari_produk_db(user_message, limit=5)
+
+    if produk_ditemukan:
+        baris_produk = []
+        for p in produk_ditemukan:
+            baris_produk.append(
+                f"- {p['nama_produk']} | {p['harga_format']} | {p['status_stok']} "
+                f"(stok {p['stok']}) | Toko: {p['nama_umkm']} | Lokasi: {p['kecamatan']} | "
+                f"Telp: {p['telepon']}"
+            )
+        konteks_produk = "Produk yang relevan ditemukan di database:\n" + "\n".join(baris_produk)
+    else:
+        konteks_produk = (
+            "Tidak ada produk yang cocok ditemukan di database untuk pertanyaan ini. "
+            "Sampaikan dengan jujur ke pelanggan bahwa produknya belum/tidak ada, "
+            "jangan mengarang nama produk, harga, atau stok."
+        )
+
+    system_prompt = (
+        "Kamu adalah asisten virtual marketplace UMKM Kendari yang membantu pelanggan "
+        "mencari produk dari berbagai toko UMKM lokal.\n\n"
+        f"{konteks_produk}\n\n"
+        "Aturan:\n"
+        "1. Jawab HANYA berdasarkan data produk di atas, jangan mengarang harga/stok/nama toko.\n"
+        "2. Kalau pelanggan tanya hal di luar produk, jawab singkat & ramah secara umum.\n"
+        "3. Gunakan Bahasa Indonesia yang santai dan cocok untuk WhatsApp.\n"
+        "4. Kalau ada beberapa produk cocok, sebutkan toko mana saja yang menjualnya."
+    )
+
     try:
         from services.ai_chat import get_ai_response
         jawaban = get_ai_response(
             user_message,
+            system_prompt=system_prompt,
             conversation_id=f"n8n:general:{user_id}"
         )
     except Exception as e:
         jawaban = f"Maaf, layanan chatbot sedang gangguan. Error: {str(e)}"
-    
+
     return jsonify({
         'success': True,
         'user_id': user_id,
         'pertanyaan': user_message,
+        'produk_ditemukan': len(produk_ditemukan),
         'jawaban': jawaban,
         'timestamp': datetime.now().isoformat()
     })
@@ -376,14 +414,9 @@ def chat_n8n():
 @n8n_bp.route('/sync-trigger', methods=['POST'])
 @require_api_key
 def sync_trigger():
-    """
-    Trigger sinkronisasi data ke Google Sheets.
-    n8n bisa memanggil ini setiap X menit untuk auto-sync.
-    Return data JSON agar n8n yang menulis ke Google Sheets.
-    """
     db = get_db()
     rows = db.execute('''
-        SELECT 
+        SELECT
             p.id,
             p.nama          AS nama_produk,
             p.deskripsi,
@@ -404,12 +437,11 @@ def sync_trigger():
         GROUP BY p.id
         ORDER BY u.nama_lengkap, p.nama ASC
     ''').fetchall()
-    
-    # Format data siap tulis ke Google Sheets
+
     gsheet_rows = [['ID', 'Nama Produk', 'Deskripsi', 'Harga (Rp)', 'Stok',
                     'Status', 'Kecamatan', 'Kategori', 'Nama UMKM',
                     'Telepon', 'Rating', 'Ulasan', 'Update Terakhir']]
-    
+
     for r in rows:
         tersedia = '✅ Ada' if int(r['tersedia']) == 1 and int(r['stok']) > 0 else '❌ Habis'
         gsheet_rows.append([
@@ -427,51 +459,22 @@ def sync_trigger():
             int(r['total_ulasan']),
             r['updated_at'] or '-'
         ])
-    
+
     return jsonify({
         'success': True,
         'sync_time': datetime.now().isoformat(),
         'total_produk': len(rows),
-        'sheet_data': gsheet_rows  # Array 2D siap untuk Google Sheets node di n8n
+        'sheet_data': gsheet_rows
     })
 
 
 # ============================================================
 # ENDPOINT 7: Info UMKM by Session Name (WAHA → n8n → Flask)
 # GET /n8n/umkm-info?session_name=628xxx&api_key=xxx
-#
-# WAHA menyertakan session_name (nomor WA penjual) ke n8n.
-# n8n memanggil endpoint ini untuk dapat profil UMKM + produk.
-# Hasilnya digunakan sebagai konteks sistem chatbot.
 # ============================================================
 @n8n_bp.route('/umkm-info', methods=['GET'])
 @require_api_key
 def get_umkm_info():
-    """
-    Ambil profil UMKM + daftar produk berdasarkan session_name WAHA.
-
-    session_name di WAHA = nomor WhatsApp penjual (e.g. '628123456789').
-    Nomor ini dicocokkan dengan kolom no_telepon di tabel users (seller).
-
-    Contoh panggilan dari n8n:
-        GET /n8n/umkm-info?session_name=628123456789&api_key=umkm-kendari-secret-2024
-
-    Return JSON:
-    {
-      "success": true,
-      "session_name": "628123456789",
-      "umkm": {
-        "id": 3,
-        "nama_lengkap": "Toko Kopi Dara",
-        "no_telepon": "628123456789",
-        "alamat": "Jl. Beringin No.5, Kendari",
-        "email": "kopi@example.com",
-        "jumlah_produk": 8,
-        "produk": [...]
-      },
-      "system_prompt": "Kamu adalah asisten virtual untuk UMKM ..."
-    }
-    """
     session_name = request.args.get('session_name', '').strip()
     if not session_name:
         return jsonify({
@@ -481,13 +484,10 @@ def get_umkm_info():
 
     db = get_db()
 
-    # Normalkan: hapus leading '+' jika ada, atau '0' di awal → '62'
-    # WAHA biasanya pakai format '628xxx@c.us' atau '628xxx'
     clean_session = session_name.split('@')[0].lstrip('+')
     local_session = '0' + clean_session[2:] if clean_session.startswith('62') else clean_session
     intl_session = '62' + clean_session[1:] if clean_session.startswith('0') else clean_session
 
-    # Cari seller berdasarkan no_telepon
     seller = db.execute('''
         SELECT id, nama_lengkap, email, no_telepon, alamat, created_at
         FROM users
@@ -511,7 +511,6 @@ def get_umkm_info():
 
     seller_id = seller['id']
 
-    # Ambil produk-produk milik seller ini
     produk_rows = db.execute('''
         SELECT
             p.id,
@@ -533,7 +532,7 @@ def get_umkm_info():
     ''', (seller_id,)).fetchall()
 
     produk_list = []
-    produk_teks_list = []  # Untuk system prompt chatbot
+    produk_teks_list = []
     for p in produk_rows:
         tersedia = bool(int(p['tersedia']) == 1 and int(p['stok']) > 0)
         item = {
@@ -551,7 +550,6 @@ def get_umkm_info():
             'total_ulasan': int(p['total_ulasan']),
         }
         produk_list.append(item)
-        # Baris ringkas untuk system prompt
         produk_teks_list.append(
             f"- {p['nama']} | "
             f"Rp {int(p['harga']):,} | "
@@ -561,7 +559,6 @@ def get_umkm_info():
 
     produk_teks = '\n'.join(produk_teks_list) if produk_teks_list else 'Belum ada produk terdaftar.'
 
-    # Buat system prompt siap pakai untuk chatbot di n8n
     system_prompt = (
         f"Kamu adalah asisten virtual WhatsApp untuk UMKM *{seller['nama_lengkap']}* "
         f"yang berlokasi di {seller['alamat'] or 'Kota Kendari'}. "
@@ -595,29 +592,12 @@ def get_umkm_info():
 
 
 # ============================================================
-# ENDPOINT 8: Chat rule-based scoped ke UMKM (alur lengkap WAHA)
+# ENDPOINT 8: Chat scoped ke UMKM (alur lengkap WAHA per-toko)
 # POST /n8n/chat-umkm
-# Body: {
-#   "message": "ada produk kopi?",
-#   "session_name": "628123456789",
-#   "user_wa": "628999888777"       ← nomor pelanggan (opsional)
-# }
 # ============================================================
 @n8n_bp.route('/chat-umkm', methods=['POST'])
 @require_api_key
 def chat_umkm():
-    """
-    Endpoint chatbot rule-based yang konteksnya disesuaikan dengan UMKM tertentu.
-
-    Alur di n8n:
-      1. WAHA Trigger → dapat message + session_name
-      2. HTTP Request ke /n8n/umkm-info?session_name=xxx → dapat system_prompt
-      3. HTTP Request ke /n8n/chat-umkm dengan body di bawah ini
-      4. Jawaban chatbot dikembalikan ke WAHA untuk dikirim ke pelanggan
-
-    Atau: jika ingin satu langkah, kirim semua ke endpoint ini.
-    Flask akan otomatis fetch umkm-info internal lalu jawab.
-    """
     data = request.get_json()
     if not data:
         return jsonify({'success': False, 'error': 'Body JSON diperlukan'}), 400
@@ -625,7 +605,6 @@ def chat_umkm():
     message      = data.get('message', '').strip()
     session_name = data.get('session_name', '').strip()
     user_wa      = data.get('user_wa', 'anonymous')
-    # Opsional: system_prompt yang sudah di-fetch sebelumnya oleh n8n
     system_prompt_override = data.get('system_prompt', '').strip()
 
     if not message:
@@ -635,7 +614,6 @@ def chat_umkm():
 
     db = get_db()
 
-    # ── Ambil konteks UMKM (sama seperti /umkm-info) ────────────────────────
     clean_session = session_name.split('@')[0].lstrip('+')
     local_session = '0' + clean_session[2:] if clean_session.startswith('62') else clean_session
     intl_session = '62' + clean_session[1:] if clean_session.startswith('0') else clean_session
@@ -660,11 +638,9 @@ def chat_umkm():
             'jawaban': 'Maaf, toko ini belum terdaftar di sistem kami.'
         }), 404
 
-    # Gunakan system_prompt dari request jika ada (lebih efisien, n8n fetch duluan)
     if system_prompt_override:
         system_prompt = system_prompt_override
     else:
-        # Bangun system_prompt dari database
         produk_rows = db.execute('''
             SELECT p.nama, p.harga, p.stok, p.tersedia, k.nama AS kategori
             FROM produk p
@@ -692,10 +668,8 @@ def chat_umkm():
             f"Gunakan bahasa Indonesia ramah dan singkat (untuk WhatsApp)."
         )
 
-    # ── Panggil chatbot rule-based ───────────────────────────────────────────
     try:
         from services.ai_chat import get_ai_response
-        # Kirim system_prompt sebagai konteks jika fungsi mendukung parameter tsb
         import inspect
         sig = inspect.signature(get_ai_response)
         conversation_id = f"n8n:{session_name}:{user_wa}"
@@ -709,7 +683,6 @@ def chat_umkm():
         elif 'system_prompt' in sig.parameters:
             jawaban = get_ai_response(message, system_prompt=system_prompt)
         else:
-            # Fallback: gabungkan system prompt ke dalam pesan
             gabungan = f"{system_prompt}\n\n---\nPertanyaan pelanggan: {message}"
             jawaban  = get_ai_response(gabungan)
     except Exception as e:

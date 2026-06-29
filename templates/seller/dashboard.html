@@ -175,7 +175,7 @@
                     <div class="product-item">
                         <div class="product-rank">{{ loop.index }}</div>
                         <div class="product-image">
-                            <img src="{{ url_for('static', filename='uploads/' + produk['gambar']) }}"
+                             <img src="{{ url_for('static', filename='uploads/' + (produk['gambar'] or 'default.jpg')) }}"
                                  alt="{{ produk['nama'] }}"
                                  onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
                             <div class="no-photo-placeholder" style="display: none; width: 60px; height: 60px;">
@@ -350,7 +350,7 @@
                     <tr>
                         <td>
                             <div class="product-cell">
-                                <img src="{{ url_for('static', filename='uploads/' + produk.gambar) }}"
+                                 <img src="{{ url_for('static', filename='uploads/' + (produk.gambar or 'default.jpg')) }}"
                                      alt="{{ produk.nama }}"
                                      class="product-thumb"
                                      onerror="this.style.display='none'; this.nextElementSibling.querySelector('.no-photo-thumb').style.display='flex'">

@@ -12,7 +12,7 @@ class Produk:
         self.harga = harga
         self.stok = stok
         self.tersedia = bool(tersedia)  # True = ada stok, False = habis
-        self.gambar = gambar
+        self.gambar = gambar if gambar else 'default.jpg'
         self.kategori_id = kategori_id
         self.seller_id = seller_id
         self.created_at = created_at

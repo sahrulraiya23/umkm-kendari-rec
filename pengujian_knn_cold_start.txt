@@ -1,0 +1,87 @@
+PENGUJIAN ALGORITMA K-NEAREST NEIGHBOR PADA SKENARIO COLD START
+
+Pada pengujian ini, algoritma K-Nearest Neighbor (KNN) diuji pada skenario cold start dengan preferensi pengguna berupa kategori Kuliner, rentang harga Rp1.250 sampai Rp75.000, dan rating minimum 3,0. Preferensi tersebut diubah menjadi virtual user profile untuk menghitung tingkat kemiripan antara pengguna dan produk menggunakan Cosine Similarity.
+
+1. Pembentukan Virtual User Profile
+
+Nilai harga representatif diambil dari titik tengah rentang harga:
+
+midpoint = (1.250 + 75.000) / 2 = 38.125,0
+
+Normalisasi harga dilakukan dengan rumus min-max normalization:
+
+harga_norm = (38.125,0 - 1.250) / (6.950.000 - 1.250) = 0,005307
+
+Karena bobot harga adalah 0,5, maka:
+
+0,005307 x 0,5 = 0,002653
+
+Normalisasi rating dihitung sebagai berikut:
+
+rating_norm = 3,0 / 5 = 0,6000
+
+Dengan demikian, vektor preferensi pengguna adalah:
+
+user_vector = [2,0; 0; 0; 0; 0; 0; 0; 0; 0; 0,002653; 0,6000]
+
+Panjang vektor pengguna adalah:
+
+||user_vector|| = sqrt((2,0)^2 + (0,002653)^2 + (0,6000)^2) = 2,088063
+
+2. Perhitungan Cosine Similarity
+
+Sebagai contoh, produk Ikan Pallumaraq dengan harga Rp35.000 memiliki nilai normalisasi harga sebagai berikut:
+
+harga_norm = (35.000 - 1.250) / (6.950.000 - 1.250) = 0,004856
+
+Setelah dibobotkan, diperoleh:
+
+0,004856 x 0,5 = 0,002428
+
+Vektor produk Ikan Pallumaraq adalah:
+
+v436 = [2,0; ...; 0,002428; 0,7000]
+
+Dot product antara user_vector dan v436 adalah:
+
+dot(u, v436) = (2,0 x 2,0) + (0,002653 x 0,002428) + (0,6000 x 0,7000)
+             = 4,0 + 0,0000064 + 0,4200
+             = 4,420006
+
+Panjang vektor produk adalah:
+
+||v436|| = 2,118963
+
+Nilai Cosine Similarity dihitung sebagai berikut:
+
+cos(u, v436) = 4,420006 / (2,088063 x 2,118963) = 0,998978
+
+Sebaliknya, produk yang tidak sesuai kategori, seperti Kaos Oleh-oleh Kendari dari kategori Retail, hanya memperoleh nilai similarity sebesar 0,115729. Hasil ini menunjukkan bahwa kategori menjadi faktor paling dominan dalam proses rekomendasi.
+
+3. Hasil Top-10 Rekomendasi
+
+Berdasarkan hasil perhitungan, diperoleh 10 produk teratas sebagai berikut:
+
+No. | Produk                         | Harga    | Avg Rating | Similarity | Dalam Rentang
+1   | Es Teler Nayaku                | Rp15.000 | 3,00       | 1,000000   | Ya
+2   | Sun Toast Chicken Tomato       | Rp20.000 | 3,1667     | 0,999884   | Ya
+3   | Olahan Sagu - Sagu Meambo Food | Rp25.000 | 3,2222     | 0,999795   | Ya
+4   | Nasi Ayam Lalapan              | Rp30.000 | 3,3333     | 0,999541   | Ya
+5   | Gado-Gado                      | Rp18.000 | 3,3750     | 0,999420   | Ya
+6   | Bubur Manado                   | Rp15.000 | 3,4000     | 0,999342   | Ya
+7   | Abon Ikan - Citra Permata      | Rp35.000 | 3,4545     | 0,999153   | Ya
+8   | Ikan Pallumaraq                | Rp35.000 | 3,5000     | 0,998978   | Ya
+9   | Mie Pangsit Baso               | Rp20.000 | 3,5000     | 0,998978   | Ya
+10  | Es Pisang Ijo                  | Rp15.000 | 3,5000     | 0,998978   | Ya
+
+Seluruh produk yang masuk dalam Top-10 rekomendasi berada pada kategori Kuliner, sesuai dengan rentang harga, dan memenuhi rating minimum. Selain itu, produk anomali yang tidak memiliki stok tidak lagi masuk ke dalam Top-10. Dengan demikian, hasil rekomendasi menjadi lebih valid. Data harga produk kuliner termurah pada lampiran juga dimulai dari Rp1.250, sehingga penggunaan nilai minimum tersebut lebih realistis untuk ilustrasi perhitungan manual.
+
+4. Precision@K
+
+Berdasarkan hasil Top-10 rekomendasi, nilai Precision@K dihitung sebagai berikut:
+
+Precision@3  = 3 / 3   = 1,0000
+Precision@5  = 5 / 5   = 1,0000
+Precision@10 = 10 / 10 = 1,0000
+
+Nilai Precision@K tersebut menunjukkan bahwa seluruh item pada daftar rekomendasi teratas relevan dengan preferensi pengguna. Artinya, algoritma KNN mampu menghasilkan rekomendasi yang sesuai pada skenario cold start berdasarkan kategori, rentang harga, dan rating minimum yang telah ditentukan.
